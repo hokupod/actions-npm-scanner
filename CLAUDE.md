@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## プロジェクト概要
 
-このプロジェクトはGitHub Actionsワークフロー内で使用されているNPMパッケージの脆弱性をチェックするGoベースのCLIツールです。2025年1月に発表されたNPM汚染攻撃に対する防御ツールとして開発されています。
+このプロジェクトはGitHub Actionsワークフロー内で使用されているNPMパッケージの脆弱性をチェックするGoベースのCLIツールです。NPM汚染攻撃に対する防御ツールとして開発されています。
 
 ## 主要コマンド
 
