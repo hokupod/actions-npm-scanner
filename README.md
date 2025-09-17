@@ -1,0 +1,1 @@
+go install github.com/hokupod/actions-npm-scanner@latest
