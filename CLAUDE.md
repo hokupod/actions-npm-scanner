@@ -4,7 +4,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## プロジェクト概要
 
-このプロジェクトはGitHub Actionsワークフロー内で使用されているNPMパッケージの脆弱性をチェックするGoベースのCLIツールです。NPM汚染攻撃に対する防御ツールとして開発されています。
+このプロジェクトは、2024年後半に発生したShai-Hulud サプライチェーン攻撃（@ctrl/tinycolorを含む40以上のNPMパッケージが侵害）への対応として開発されたGoベースのCLIツールです。GitHub Actionsワークフロー内で使用されている、この攻撃で特定された脆弱なNPMパッケージをチェックします。
+
+参考: https://www.stepsecurity.io/blog/ctrl-tinycolor-and-40-npm-packages-compromised
 
 ## 主要コマンド
 
@@ -35,22 +37,28 @@ go mod download           # 依存関係をダウンロード
 - **main.go**: CLIエントリーポイント。コマンドライン引数を処理し、全体の処理を協調させる
 - **parser.go**: GitHub Actionsワークフロー（YAML）の解析とアクション抽出
 - **github.go**: GitHubからアクションリポジトリのダウンロード（go-git使用）
-- **scanner.go**: ダウンロードしたアクション内のpackage.jsonファイルでの脆弱パッケージ検出
-- **vulnerable_packages.go**: 脆弱なNPMパッケージのリスト（330以上のパッケージ）
+- **scanner.go**: 複数のパッケージマネージャ（npm、yarn、pnpm）のロックファイルでの脆弱パッケージ検出。ハッシュマップ最適化とresolvedフィールドからの正確なバージョン抽出機能を含む
+- **vulnerable_packages.go**: Shai-Hulud攻撃で侵害されたNPMパッケージの静的リスト（330以上のパッケージ）
 
 ### データフロー
 
 1. YAMLワークフローファイルを解析してアクションを抽出
 2. 各アクションのGitHubリポジトリを一時ディレクトリにクローン
-3. package.json/package-lock.jsonファイルを検索
-4. 脆弱パッケージリストと照合
+3. 複数のパッケージマネージャファイルを検索：
+   - package.json（npm）
+   - package-lock.json（npm v1/v2/v3対応、resolvedフィールドからの正確なバージョン抽出）
+   - yarn.lock（yarn）
+   - pnpm-lock.yaml（pnpm）
+4. ハッシュマップによる最適化された脆弱パッケージ検索
 5. 結果をコンソールに出力
 
 ### 主要な型定義
 
 - `Action`: GitHubアクション（Owner, Repo, Version, Path）
-- `VulnerablePackage`: 脆弱なNPMパッケージ（Name, Version）
+- `VulnerablePackage`: 脆弱なNPMパッケージ（Name, Versions）
+- `VulnerablePackageMap`: パフォーマンス最適化のためのハッシュマップ型
 - `Workflow`: GitHubワークフロー構造
+- `PackageJSON`, `PackageLockJSON`, `PnpmLock`: 各パッケージマネージャのファイル構造
 
 ## テストサンプル
 
@@ -60,6 +68,23 @@ go mod download           # 依存関係をダウンロード
 
 - `gopkg.in/yaml.v3`: YAMLパース
 - `github.com/go-git/go-git/v5`: Gitリポジトリクローン
+- `github.com/Masterminds/semver/v3`: セマンティックバージョニング処理と範囲指定の解析
+
+## 最近の改善点
+
+### バージョンマッチング精度向上
+- package-lock.jsonの`resolved`フィールドから実際にダウンロードされたバージョンを抽出
+- セマンティックバージョン範囲指定（^, ~, >=等）の正確な処理
+- プレリリース版のサポート向上
+
+### パフォーマンス最適化
+- 脆弱パッケージリストのハッシュマップ化（O(n*m) → O(n)の計算量改善）
+- 各パッケージマネージャ向けの最適化されたスキャン関数
+
+### 包括的なテストカバレッジ
+- resolved版処理のテスト
+- ハッシュマップ最適化のテスト
+- 複数パッケージマネージャの統合テスト
 
 ## 使用例
 

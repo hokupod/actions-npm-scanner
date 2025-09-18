@@ -1,13 +1,9 @@
 package main
 
-// VulnerablePackage represents a vulnerable NPM package with detailed information
+// VulnerablePackage represents a vulnerable NPM package
 type VulnerablePackage struct {
-	Name        string
-	Versions    []string
-	Severity    string   // "critical", "high", "medium", "low"
-	CVE         []string // CVE numbers in CVE-2024-XXXX format
-	Description string
-	FixedIn     []string
+	Name     string
+	Versions []string
 }
 
 // GetVulnerablePackages returns a list of vulnerable NPM packages
