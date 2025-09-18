@@ -51,13 +51,13 @@ Binary releases will be available on the [releases page](https://github.com/hoku
 ### Scan a Single Workflow File
 
 ```bash
-./actions-npm-scanner workflow.yml
+actions-npm-scanner workflow.yml
 ```
 
 ### Scan All Workflows in a Directory
 
 ```bash
-./actions-npm-scanner .github/workflows/
+actions-npm-scanner .github/workflows/
 ```
 
 ### From Source
