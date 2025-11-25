@@ -17,6 +17,8 @@ The attack demonstrated sophisticated techniques including:
 
 This scanner helps identify these specifically compromised packages in your GitHub Actions workflows, providing defense against this and similar NPM poisoning attacks that target CI/CD environments.
 
+In late 2025, the "Second Coming" NPM contamination campaign was discovered, which is detailed in this [blog post](https://research.jfrog.com/post/shai-hulud-the-second-coming/).
+
 ## Features
 
 - 🔍 **Comprehensive Scanning**: Scans GitHub Actions workflow files (.yml/.yaml)
@@ -189,6 +191,8 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 - パブリックリポジトリへのシークレット情報の流出
 
 このスキャナーは、GitHub Actionsワークフロー内でこれらの特定の侵害されたパッケージを識別し、CI/CD環境を標的とするNPM汚染攻撃に対する防御を提供します。
+
+2025年後半には、「Second Coming」と呼ばれるNPM汚染キャンペーンが発見されました。詳細については、こちらの[ブログ記事](https://research.jfrog.com/post/shai-hulud-the-second-coming/)で解説されています。
 
 ## 主な機能
 
