@@ -125,6 +125,14 @@ func buildVulnerablePackageMap(vulnerablePackages []VulnerablePackage) Vulnerabl
 	return packageMap
 }
 
+func buildVulnerablePypiPackageMap(vulnerablePackages []VulnerablePackage) VulnerablePackageMap {
+	packageMap := make(VulnerablePackageMap, len(vulnerablePackages))
+	for _, pkg := range vulnerablePackages {
+		packageMap[canonicalPythonPackageName(pkg.Name)] = pkg
+	}
+	return packageMap
+}
+
 // isVulnerable checks if a package is vulnerable using the optimized map
 func (vpm VulnerablePackageMap) isVulnerable(packageName, version string) (bool, VulnerablePackage) {
 	if vulnerablePackage, exists := vpm[packageName]; exists {
@@ -140,12 +148,13 @@ func formatVulnerabilityMessage(pkgName, version, filename string, vulnerablePac
 	return fmt.Sprintf("Found vulnerable package %s with version %s in %s", pkgName, version, filename)
 }
 
-// ScanAction scans a downloaded action for vulnerable packages
-func ScanAction(actionDir string, vulnerablePackages []VulnerablePackage) ([]string, error) {
+// ScanAction scans a downloaded action for vulnerable packages.
+func ScanAction(actionDir string, catalog VulnerabilityCatalog) ([]string, error) {
 	var foundVulnerabilities []string
 
 	// Build optimized vulnerability map once
-	vulnerablePackageMap := buildVulnerablePackageMap(vulnerablePackages)
+	vulnerablePackageMap := buildVulnerablePackageMap(catalog.NpmPackages)
+	pypiPackageMap := buildVulnerablePypiPackageMap(catalog.PypiPackages)
 
 	packageJSONPath := filepath.Join(actionDir, "package.json")
 	packageLockJSONPath := filepath.Join(actionDir, "package-lock.json")
@@ -200,6 +209,12 @@ func ScanAction(actionDir string, vulnerablePackages []VulnerablePackage) ([]str
 		fmt.Println("       pnpm-lock.yaml not found. Skipping.")
 	}
 
+	vulnerabilities, err := scanPythonDependencyFiles(actionDir, pypiPackageMap)
+	if err != nil {
+		return nil, err
+	}
+	foundVulnerabilities = append(foundVulnerabilities, vulnerabilities...)
+
 	return foundVulnerabilities, nil
 }
 
@@ -249,6 +264,332 @@ func scanPackageJSONOptimized(path string, vulnerablePackageMap VulnerablePackag
 	}
 
 	return foundVulnerabilities, nil
+}
+
+func scanPythonDependencyFiles(actionDir string, vulnerablePackageMap VulnerablePackageMap) ([]string, error) {
+	var foundVulnerabilities []string
+
+	requirementsPaths, err := filepath.Glob(filepath.Join(actionDir, "requirements*.txt"))
+	if err != nil {
+		return nil, err
+	}
+	if len(requirementsPaths) == 0 {
+		fmt.Println("       requirements*.txt not found. Skipping.")
+	}
+	for _, path := range requirementsPaths {
+		fmt.Printf("    🔍 Scanning %s...\n", filepath.Base(path))
+		vulnerabilities, err := scanRequirementsTxt(path, vulnerablePackageMap)
+		if err != nil {
+			return nil, err
+		}
+		foundVulnerabilities = append(foundVulnerabilities, vulnerabilities...)
+	}
+
+	lockScanners := []struct {
+		filename string
+		scan     func(string, VulnerablePackageMap) ([]string, error)
+	}{
+		{"Pipfile.lock", scanPipfileLock},
+		{"poetry.lock", scanPythonPackageLock},
+		{"uv.lock", scanPythonPackageLock},
+	}
+
+	for _, lockScanner := range lockScanners {
+		path := filepath.Join(actionDir, lockScanner.filename)
+		if _, err := os.Stat(path); err == nil {
+			fmt.Printf("    🔍 Scanning %s...\n", lockScanner.filename)
+			vulnerabilities, err := lockScanner.scan(path, vulnerablePackageMap)
+			if err != nil {
+				return nil, err
+			}
+			foundVulnerabilities = append(foundVulnerabilities, vulnerabilities...)
+		} else {
+			fmt.Printf("       %s not found. Skipping.\n", lockScanner.filename)
+		}
+	}
+
+	return foundVulnerabilities, nil
+}
+
+func scanRequirementsTxt(path string, vulnerablePackageMap VulnerablePackageMap) ([]string, error) {
+	var foundVulnerabilities []string
+	data, err := ioutil.ReadFile(path)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read %s: %w", path, err)
+	}
+
+	for _, line := range strings.Split(string(data), "\n") {
+		packageName, versionSpec := parseRequirementLine(line)
+		if packageName == "" || versionSpec == "" {
+			continue
+		}
+		if isVuln, vulnerablePackage := isPythonPackageSpecVulnerable(vulnerablePackageMap, packageName, versionSpec); isVuln {
+			foundVulnerabilities = append(foundVulnerabilities, formatPythonVulnerabilityMessage(packageName, versionSpec, filepath.Base(path), vulnerablePackage))
+		}
+	}
+
+	return foundVulnerabilities, nil
+}
+
+func scanPipfileLock(path string, vulnerablePackageMap VulnerablePackageMap) ([]string, error) {
+	var foundVulnerabilities []string
+	data, err := ioutil.ReadFile(path)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read %s: %w", path, err)
+	}
+
+	type pipfilePackage struct {
+		Version string `json:"version"`
+	}
+	var pipfileLock struct {
+		Default map[string]pipfilePackage `json:"default"`
+		Develop map[string]pipfilePackage `json:"develop"`
+	}
+	if err := json.Unmarshal(data, &pipfileLock); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal %s: %w", path, err)
+	}
+
+	sections := []map[string]pipfilePackage{pipfileLock.Default, pipfileLock.Develop}
+	for _, section := range sections {
+		for packageName, packageInfo := range section {
+			if isVuln, vulnerablePackage := isPythonPackageSpecVulnerable(vulnerablePackageMap, packageName, packageInfo.Version); isVuln {
+				foundVulnerabilities = append(foundVulnerabilities, formatPythonVulnerabilityMessage(packageName, packageInfo.Version, filepath.Base(path), vulnerablePackage))
+			}
+		}
+	}
+
+	return foundVulnerabilities, nil
+}
+
+func scanPythonPackageLock(path string, vulnerablePackageMap VulnerablePackageMap) ([]string, error) {
+	var foundVulnerabilities []string
+	data, err := ioutil.ReadFile(path)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read %s: %w", path, err)
+	}
+
+	flushPackage := func(name, version string) {
+		if name == "" || version == "" {
+			return
+		}
+		if isVuln, vulnerablePackage := isPythonPackageSpecVulnerable(vulnerablePackageMap, name, version); isVuln {
+			foundVulnerabilities = append(foundVulnerabilities, formatPythonVulnerabilityMessage(name, version, filepath.Base(path), vulnerablePackage))
+		}
+	}
+
+	var currentName, currentVersion string
+	for _, rawLine := range strings.Split(string(data), "\n") {
+		line := strings.TrimSpace(rawLine)
+		if line == "[[package]]" {
+			flushPackage(currentName, currentVersion)
+			currentName = ""
+			currentVersion = ""
+			continue
+		}
+		if strings.HasPrefix(line, "name = ") {
+			currentName = trimQuotedValue(strings.TrimSpace(strings.TrimPrefix(line, "name = ")))
+			continue
+		}
+		if strings.HasPrefix(line, "version = ") {
+			currentVersion = trimQuotedValue(strings.TrimSpace(strings.TrimPrefix(line, "version = ")))
+		}
+	}
+	flushPackage(currentName, currentVersion)
+
+	return foundVulnerabilities, nil
+}
+
+func parseRequirementLine(line string) (string, string) {
+	line = strings.TrimSpace(line)
+	if line == "" || strings.HasPrefix(line, "#") || strings.HasPrefix(line, "-") || strings.HasPrefix(line, "git+") || strings.HasPrefix(line, "http://") || strings.HasPrefix(line, "https://") {
+		return "", ""
+	}
+	if idx := strings.Index(line, "#"); idx >= 0 {
+		line = strings.TrimSpace(line[:idx])
+	}
+	if idx := strings.Index(line, ";"); idx >= 0 {
+		line = strings.TrimSpace(line[:idx])
+	}
+
+	operators := []string{"===", "==", "!=", ">=", "<=", "~=", ">", "<"}
+	operatorIndex := -1
+	for _, operator := range operators {
+		if idx := strings.Index(line, operator); idx >= 0 && (operatorIndex == -1 || idx < operatorIndex) {
+			operatorIndex = idx
+		}
+	}
+	if operatorIndex == -1 {
+		return canonicalPythonPackageName(line), ""
+	}
+
+	return canonicalPythonPackageName(line[:operatorIndex]), strings.TrimSpace(line[operatorIndex:])
+}
+
+func isPythonPackageSpecVulnerable(packageMap VulnerablePackageMap, packageName, versionSpec string) (bool, VulnerablePackage) {
+	canonicalName := canonicalPythonPackageName(packageName)
+	vulnerablePackage, exists := packageMap[canonicalName]
+	if !exists {
+		return false, VulnerablePackage{}
+	}
+	if isPythonVersionSpecVulnerable(versionSpec, vulnerablePackage.Versions) {
+		return true, vulnerablePackage
+	}
+	return false, VulnerablePackage{}
+}
+
+func isPythonVersionSpecVulnerable(versionSpec string, vulnerableVersions []string) bool {
+	versionSpec = strings.TrimSpace(trimQuotedValue(versionSpec))
+	if versionSpec == "" {
+		return false
+	}
+	for _, vulnerableVersion := range vulnerableVersions {
+		if pythonVersionSatisfiesSpec(vulnerableVersion, versionSpec) {
+			return true
+		}
+	}
+	return false
+}
+
+func pythonVersionSatisfiesSpec(version, versionSpec string) bool {
+	constraints := strings.Split(versionSpec, ",")
+	for _, constraint := range constraints {
+		constraint = strings.TrimSpace(constraint)
+		if constraint == "" {
+			continue
+		}
+		if !pythonVersionSatisfiesConstraint(version, constraint) {
+			return false
+		}
+	}
+	return true
+}
+
+func pythonVersionSatisfiesConstraint(version, constraint string) bool {
+	operators := []string{"===", "==", "!=", ">=", "<=", "~=", ">", "<"}
+	operator := ""
+	operand := constraint
+	for _, candidate := range operators {
+		if strings.HasPrefix(constraint, candidate) {
+			operator = candidate
+			operand = strings.TrimSpace(strings.TrimPrefix(constraint, candidate))
+			break
+		}
+	}
+
+	if operator == "" {
+		return version == strings.TrimSpace(operand)
+	}
+	if operator == "==" || operator == "===" {
+		return pythonVersionEquals(version, operand)
+	}
+	if operator == "!=" {
+		return !pythonVersionEquals(version, operand)
+	}
+	if operator == "~=" {
+		return pythonVersionCompatible(version, operand)
+	}
+
+	cmp, ok := comparePythonVersions(version, operand)
+	if !ok {
+		return false
+	}
+	switch operator {
+	case ">=":
+		return cmp >= 0
+	case "<=":
+		return cmp <= 0
+	case ">":
+		return cmp > 0
+	case "<":
+		return cmp < 0
+	default:
+		return false
+	}
+}
+
+func pythonVersionEquals(version, operand string) bool {
+	operand = strings.TrimSpace(operand)
+	if strings.HasSuffix(operand, ".*") {
+		return strings.HasPrefix(version, strings.TrimSuffix(operand, "*"))
+	}
+	return version == operand
+}
+
+func pythonVersionCompatible(version, operand string) bool {
+	if cmp, ok := comparePythonVersions(version, operand); !ok || cmp < 0 {
+		return false
+	}
+	upperBound := pythonCompatibleUpperBound(operand)
+	if upperBound == "" {
+		return false
+	}
+	cmp, ok := comparePythonVersions(version, upperBound)
+	return ok && cmp < 0
+}
+
+func pythonCompatibleUpperBound(version string) string {
+	parts := strings.Split(version, ".")
+	if len(parts) < 2 {
+		return ""
+	}
+	if len(parts) == 2 {
+		nextMajor, ok := incrementNumericString(parts[0])
+		if !ok {
+			return ""
+		}
+		return nextMajor + ".0.0"
+	}
+	nextMinor, ok := incrementNumericString(parts[1])
+	if !ok {
+		return ""
+	}
+	return parts[0] + "." + nextMinor + ".0"
+}
+
+func comparePythonVersions(left, right string) (int, bool) {
+	leftVersion, err := semver.NewVersion(cleanPythonVersion(left))
+	if err != nil {
+		return 0, false
+	}
+	rightVersion, err := semver.NewVersion(cleanPythonVersion(right))
+	if err != nil {
+		return 0, false
+	}
+	return leftVersion.Compare(rightVersion), true
+}
+
+func cleanPythonVersion(version string) string {
+	version = strings.TrimSpace(trimQuotedValue(version))
+	version = strings.TrimPrefix(version, "v")
+	version = strings.TrimSuffix(version, ".*")
+	return version
+}
+
+func canonicalPythonPackageName(name string) string {
+	name = strings.TrimSpace(name)
+	if idx := strings.Index(name, "["); idx >= 0 {
+		name = name[:idx]
+	}
+	name = strings.ToLower(name)
+	name = strings.ReplaceAll(name, "_", "-")
+	name = strings.ReplaceAll(name, ".", "-")
+	return strings.TrimSpace(name)
+}
+
+func trimQuotedValue(value string) string {
+	return strings.Trim(strings.TrimSpace(value), "\"'")
+}
+
+func incrementNumericString(value string) (string, bool) {
+	version, err := semver.NewVersion(value + ".0.0")
+	if err != nil {
+		return "", false
+	}
+	return fmt.Sprintf("%d", version.Major()+1), true
+}
+
+func formatPythonVulnerabilityMessage(pkgName, versionSpec, filename string, vulnerablePackage VulnerablePackage) string {
+	return fmt.Sprintf("Found vulnerable package %s with version spec %s in %s (potential match)", pkgName, versionSpec, filename)
 }
 
 func scanPackageJSON(path string, vulnerablePackages []VulnerablePackage) ([]string, error) {

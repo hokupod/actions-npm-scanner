@@ -8,6 +8,10 @@ import (
 	"testing"
 )
 
+func testNpmCatalog(vulnerablePackages []VulnerablePackage) VulnerabilityCatalog {
+	return VulnerabilityCatalog{NpmPackages: vulnerablePackages}
+}
+
 func TestScanAction(t *testing.T) {
 	tmpDir, err := ioutil.TempDir("", "action-")
 	if err != nil {
@@ -29,7 +33,7 @@ func TestScanAction(t *testing.T) {
 		{Name: "@ctrl/tinycolor", Versions: []string{"4.1.1"}},
 	}
 
-	vulnerabilities, err := ScanAction(tmpDir, vulnerablePackages)
+	vulnerabilities, err := ScanAction(tmpDir, testNpmCatalog(vulnerablePackages))
 	if err != nil {
 		t.Fatalf("ScanAction() error = %v", err)
 	}
@@ -58,7 +62,7 @@ func TestScanActionWithYarnLock(t *testing.T) {
 		{Name: "@ctrl/tinycolor", Versions: []string{"4.1.1"}},
 	}
 
-	vulnerabilities, err := ScanAction(tmpDir, vulnerablePackages)
+	vulnerabilities, err := ScanAction(tmpDir, testNpmCatalog(vulnerablePackages))
 	if err != nil {
 		t.Fatalf("ScanAction() error = %v", err)
 	}
@@ -90,7 +94,7 @@ packages:
 		{Name: "@ctrl/tinycolor", Versions: []string{"4.1.1"}},
 	}
 
-	vulnerabilities, err := ScanAction(tmpDir, vulnerablePackages)
+	vulnerabilities, err := ScanAction(tmpDir, testNpmCatalog(vulnerablePackages))
 	if err != nil {
 		t.Fatalf("ScanAction() error = %v", err)
 	}
@@ -127,7 +131,7 @@ func TestScanActionWithPackageLockJSON(t *testing.T) {
 		{Name: "@ctrl/tinycolor", Versions: []string{"4.1.1"}},
 	}
 
-	vulnerabilities, err := ScanAction(tmpDir, vulnerablePackages)
+	vulnerabilities, err := ScanAction(tmpDir, testNpmCatalog(vulnerablePackages))
 	if err != nil {
 		t.Fatalf("ScanAction() error = %v", err)
 	}
@@ -164,7 +168,7 @@ func TestScanActionWithResolvedVersions(t *testing.T) {
 		{Name: "@ctrl/tinycolor", Versions: []string{"4.1.1"}},
 	}
 
-	vulnerabilities, err := ScanAction(tmpDir, vulnerablePackages)
+	vulnerabilities, err := ScanAction(tmpDir, testNpmCatalog(vulnerablePackages))
 	if err != nil {
 		t.Fatalf("ScanAction() error = %v", err)
 	}
@@ -735,5 +739,144 @@ func TestExtractPackageNameAndVersionFromPnpmPath(t *testing.T) {
 		if version != test.version {
 			t.Errorf("extractPackageNameAndVersionFromPnpmPath(%q) = name: %q, version: %q; expected version: %q", test.path, name, version, test.version)
 		}
+	}
+}
+
+func TestMiniShaiHuludNpmPackages(t *testing.T) {
+	tmpDir, err := ioutil.TempDir("", "mini-shai-hulud-npm-")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	packageJSON := `{
+	  "dependencies": {
+	    "@cap-js/sqlite": "2.2.2",
+	    "intercom-client": "7.0.4"
+	  }
+	}`
+	if err := ioutil.WriteFile(filepath.Join(tmpDir, "package.json"), []byte(packageJSON), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	packageLockJSON := `{
+	  "lockfileVersion": 2,
+	  "packages": {
+	    "node_modules/@cap-js/postgres": {
+	      "version": "2.2.2"
+	    }
+	  }
+	}`
+	if err := ioutil.WriteFile(filepath.Join(tmpDir, "package-lock.json"), []byte(packageLockJSON), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	yarnLock := `"@cap-js/db-service@^2.10.1":
+  version "2.10.1"
+`
+	if err := ioutil.WriteFile(filepath.Join(tmpDir, "yarn.lock"), []byte(yarnLock), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	pnpmLock := `
+packages:
+  /mbt/1.2.48:
+    resolution: {integrity: sha512-...}
+`
+	if err := ioutil.WriteFile(filepath.Join(tmpDir, "pnpm-lock.yaml"), []byte(pnpmLock), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	vulnerabilities, err := ScanAction(tmpDir, GetVulnerabilityCatalog())
+	if err != nil {
+		t.Fatalf("ScanAction() error = %v", err)
+	}
+
+	expectedPackages := []string{"@cap-js/sqlite", "@cap-js/postgres", "@cap-js/db-service", "mbt", "intercom-client"}
+	for _, expectedPackage := range expectedPackages {
+		found := false
+		for _, vulnerability := range vulnerabilities {
+			if strings.Contains(vulnerability, expectedPackage) {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Errorf("expected vulnerability for %s, got %v", expectedPackage, vulnerabilities)
+		}
+	}
+}
+
+func TestMiniShaiHuludPypiPackages(t *testing.T) {
+	tmpDir, err := ioutil.TempDir("", "mini-shai-hulud-pypi-")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	requirements := `lightning==2.6.2
+lightning>=2.6.2,<2.6.4
+lightning==2.6.1
+`
+	if err := ioutil.WriteFile(filepath.Join(tmpDir, "requirements.txt"), []byte(requirements), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	pipfileLock := `{
+	  "default": {
+	    "lightning": {"version": "==2.6.3"}
+	  },
+	  "develop": {}
+	}`
+	if err := ioutil.WriteFile(filepath.Join(tmpDir, "Pipfile.lock"), []byte(pipfileLock), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	poetryLock := `[[package]]
+name = "lightning"
+version = "2.6.2"
+`
+	if err := ioutil.WriteFile(filepath.Join(tmpDir, "poetry.lock"), []byte(poetryLock), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	uvLock := `[[package]]
+name = "lightning"
+version = "2.6.3"
+`
+	if err := ioutil.WriteFile(filepath.Join(tmpDir, "uv.lock"), []byte(uvLock), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	vulnerabilities, err := ScanAction(tmpDir, GetVulnerabilityCatalog())
+	if err != nil {
+		t.Fatalf("ScanAction() error = %v", err)
+	}
+
+	expectedFiles := []string{"requirements.txt", "Pipfile.lock", "poetry.lock", "uv.lock"}
+	for _, expectedFile := range expectedFiles {
+		found := false
+		for _, vulnerability := range vulnerabilities {
+			if strings.Contains(vulnerability, expectedFile) {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Errorf("expected vulnerability in %s, got %v", expectedFile, vulnerabilities)
+		}
+	}
+
+	foundRange := false
+	for _, vulnerability := range vulnerabilities {
+		if strings.Contains(vulnerability, ">=2.6.2,<2.6.4") {
+			foundRange = true
+		}
+		if strings.Contains(vulnerability, "2.6.1") {
+			t.Errorf("expected lightning==2.6.1 not to be vulnerable, got %s", vulnerability)
+		}
+	}
+	if !foundRange {
+		t.Errorf("expected range requirement to be reported, got %v", vulnerabilities)
 	}
 }

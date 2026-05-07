@@ -32,7 +32,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	vulnerablePackages := GetVulnerablePackages()
+	vulnerabilityCatalog := GetVulnerabilityCatalog()
 
 	for _, file := range files {
 		fmt.Println("Scanning workflow:", file)
@@ -60,7 +60,7 @@ func main() {
 			}
 
 			fmt.Printf("  🔍 Scanning action %s/%s@%s...\n", action.Owner, action.Repo, action.Version)
-			vulnerabilities, err := ScanAction(tmpDir, vulnerablePackages)
+			vulnerabilities, err := ScanAction(tmpDir, vulnerabilityCatalog)
 			if err != nil {
 				fmt.Println("Error scanning action:", err)
 				continue

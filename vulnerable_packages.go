@@ -1,13 +1,33 @@
 package main
 
-// VulnerablePackage represents a vulnerable NPM package
+// VulnerablePackage represents a vulnerable package in a package ecosystem.
 type VulnerablePackage struct {
 	Name     string
 	Versions []string
 }
 
-// GetVulnerablePackages returns a list of vulnerable NPM packages
+// VulnerabilityCatalog groups vulnerable packages by package ecosystem.
+type VulnerabilityCatalog struct {
+	NpmPackages  []VulnerablePackage
+	PypiPackages []VulnerablePackage
+}
+
+// GetVulnerabilityCatalog returns vulnerable package catalogs by ecosystem.
+func GetVulnerabilityCatalog() VulnerabilityCatalog {
+	// ADR: docs/adr/2026-05-07-extend-scanner-for-mini-shai-hulud-npm-and-pypi-indicators.md
+	return VulnerabilityCatalog{
+		NpmPackages:  GetVulnerableNpmPackages(),
+		PypiPackages: GetVulnerablePypiPackages(),
+	}
+}
+
+// GetVulnerablePackages returns a list of vulnerable NPM packages.
 func GetVulnerablePackages() []VulnerablePackage {
+	return GetVulnerableNpmPackages()
+}
+
+// GetVulnerableNpmPackages returns a list of vulnerable NPM packages.
+func GetVulnerableNpmPackages() []VulnerablePackage {
 	return []VulnerablePackage{
 		{Name: "02-echo", Versions: []string{"0.0.7"}},
 		{Name: "@accordproject/concerto-analysis", Versions: []string{"3.24.1"}},
@@ -34,6 +54,9 @@ func GetVulnerablePackages() []VulnerablePackage {
 		{Name: "@actbase/react-native-tiktok", Versions: []string{"1.1.3"}},
 		{Name: "@afetcan/api", Versions: []string{"0.0.13"}},
 		{Name: "@afetcan/storage", Versions: []string{"0.0.27"}},
+		{Name: "@cap-js/db-service", Versions: []string{"2.10.1"}},
+		{Name: "@cap-js/postgres", Versions: []string{"2.2.2"}},
+		{Name: "@cap-js/sqlite", Versions: []string{"2.2.2"}},
 		{Name: "@ahmedhfarag/ngx-perfect-scrollbar", Versions: []string{"20.0.20"}},
 		{Name: "@ahmedhfarag/ngx-virtual-scroller", Versions: []string{"4.0.4"}},
 		{Name: "@alaan/s2s-auth", Versions: []string{"2.0.3"}},
@@ -732,6 +755,7 @@ func GetVulnerablePackages() []VulnerablePackage {
 		{Name: "hopedraw", Versions: []string{"1.0.3"}},
 		{Name: "hover-design-prototype", Versions: []string{"0.0.5"}},
 		{Name: "html-to-base64-image", Versions: []string{"1.0.2"}},
+		{Name: "intercom-client", Versions: []string{"7.0.4"}},
 		{Name: "httpness", Versions: []string{"1.0.2", "1.0.3"}},
 		{Name: "hyper-fullfacing", Versions: []string{"1.0.3"}},
 		{Name: "hyperterm-hipster", Versions: []string{"1.0.7"}},
@@ -774,6 +798,7 @@ func GetVulnerablePackages() []VulnerablePackage {
 		{Name: "mcfly-semantic-release", Versions: []string{"1.3.1"}},
 		{Name: "mcp-knowledge-base", Versions: []string{"0.0.2"}},
 		{Name: "mcp-knowledge-graph", Versions: []string{"1.2.1"}},
+		{Name: "mbt", Versions: []string{"1.2.48"}},
 		{Name: "mcp-use", Versions: []string{"1.4.2", "1.4.3"}},
 		{Name: "medusa-plugin-announcement", Versions: []string{"0.0.3"}},
 		{Name: "medusa-plugin-logs", Versions: []string{"0.0.17"}},
@@ -1005,5 +1030,12 @@ func GetVulnerablePackages() []VulnerablePackage {
 		{Name: "zuper-cli", Versions: []string{"1.0.1"}},
 		{Name: "zuper-sdk", Versions: []string{"1.0.57"}},
 		{Name: "zuper-stream", Versions: []string{"2.0.9"}},
+	}
+}
+
+// GetVulnerablePypiPackages returns a list of vulnerable PyPI packages.
+func GetVulnerablePypiPackages() []VulnerablePackage {
+	return []VulnerablePackage{
+		{Name: "lightning", Versions: []string{"2.6.2", "2.6.3"}},
 	}
 }
