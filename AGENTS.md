@@ -30,6 +30,18 @@ go mod tidy               # 依存関係を整理
 go mod download           # 依存関係をダウンロード
 ```
 
+### リリース・インストール確認
+```bash
+go install github.com/hokupod/actions-npm-scanner@latest
+git tag --sort=-v:refname | head
+git ls-remote origin refs/heads/main refs/tags/vX.Y.Z refs/tags/vX.Y.Z^{}
+```
+
+- `go install ...@latest` は最新のsemverタグを優先するため、mainにpushしただけでは利用者の`@latest`に反映されない
+- 機能追加・依存更新・検出IoC更新を配布する場合は、変更コミットに新しいsemverタグ（例: `v0.2.0`）を作成してpushする
+- タグpush後は `git ls-remote` でタグのpeeled commit（`refs/tags/vX.Y.Z^{}`）が意図したコミットを指すことを確認する
+- `CLAUDE.md` は `AGENTS.md` へのsymlinkとして維持し、エージェント向け手順は `AGENTS.md` に集約する
+
 ## アーキテクチャ
 
 ### 主要コンポーネント
