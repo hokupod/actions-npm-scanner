@@ -223,6 +223,10 @@ func ScanDependencyFile(path string, catalog VulnerabilityCatalog) ([]string, er
 	vulnerablePackageMap := buildVulnerablePackageMap(catalog.NpmPackages)
 	pypiPackageMap := buildVulnerablePypiPackageMap(catalog.PypiPackages)
 
+	return scanDependencyFile(path, vulnerablePackageMap, pypiPackageMap)
+}
+
+func scanDependencyFile(path string, vulnerablePackageMap, pypiPackageMap VulnerablePackageMap) ([]string, error) {
 	filename := filepath.Base(path)
 	if matched, err := filepath.Match("requirements*.txt", filename); err != nil {
 		return nil, err

@@ -3,7 +3,6 @@ package main
 import (
 	"flag"
 	"fmt"
-	"io/ioutil"
 	"os"
 	"path/filepath"
 )
@@ -73,7 +72,7 @@ func runWorkflowScan(path string, vulnerabilityCatalog VulnerabilityCatalog) (bo
 }
 
 func scanWorkflowAction(action Action, vulnerabilityCatalog VulnerabilityCatalog) bool {
-	tmpDir, err := ioutil.TempDir("", "action-")
+	tmpDir, err := os.MkdirTemp("", "action-")
 	if err != nil {
 		fmt.Println("Error creating temp dir:", err)
 		return false
@@ -110,9 +109,10 @@ func runLocalScan(path string, vulnerabilityCatalog VulnerabilityCatalog) (bool,
 		fmt.Println("Scanning local path:", path)
 		vulnerabilities, err = ScanAction(path, vulnerabilityCatalog)
 	} else {
-		fmt.Println("Scanning local file:", path)
-		fmt.Printf("  🔍 Scanning %s...\n", filepath.Base(path))
-		vulnerabilities, err = ScanDependencyFile(path, vulnerabilityCatalog)
+		fmt.Printf("🔍 Scanning local file: %s...\n", path)
+		vulnerablePackageMap := buildVulnerablePackageMap(vulnerabilityCatalog.NpmPackages)
+		pypiPackageMap := buildVulnerablePypiPackageMap(vulnerabilityCatalog.PypiPackages)
+		vulnerabilities, err = scanDependencyFile(path, vulnerablePackageMap, pypiPackageMap)
 	}
 	if err != nil {
 		return false, err
@@ -140,7 +140,7 @@ func getFiles(path string) ([]string, error) {
 	}
 
 	if fileInfo.IsDir() {
-		files, err := ioutil.ReadDir(path)
+		files, err := os.ReadDir(path)
 		if err != nil {
 			return nil, err
 		}

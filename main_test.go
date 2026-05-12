@@ -43,8 +43,7 @@ func TestLocalScanFileWithVulnerability(t *testing.T) {
 	assertExitCode(t, err, 1, output)
 
 	expectedStrings := []string{
-		"Scanning local file:",
-		"🔍 Scanning package.json...",
+		"🔍 Scanning local file:",
 		"⚠️ Found vulnerabilities:",
 		"Found vulnerable package @ctrl/tinycolor with version 4.1.1 in package.json",
 	}
