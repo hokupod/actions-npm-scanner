@@ -75,9 +75,7 @@ func runWorkflowScan(path string, vulnerabilityCatalog VulnerabilityCatalog, ver
 	scannedActions := make(map[string]bool)
 	for _, file := range files {
 		summary.WorkflowsScanned++
-		if verbose {
-			fmt.Println("Scanning workflow:", file)
-		}
+		fmt.Println("Scanning workflow:", file)
 
 		workflow, err := ParseWorkflow(file)
 		if err != nil {

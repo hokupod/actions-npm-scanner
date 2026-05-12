@@ -16,6 +16,7 @@ func TestMain(t *testing.T) {
 	assertExitCode(t, err, 1, output)
 
 	expectedStrings := []string{
+		"Scanning workflow: " + workflowPath,
 		"⚠️ Found vulnerabilities.",
 		"Workflows scanned: 1",
 		"Actions scanned: 1",
@@ -159,6 +160,7 @@ func TestWorkflowParseErrorAppearsInSummaryWithoutFailureExit(t *testing.T) {
 	assertExitCode(t, err, 0, output)
 
 	assertContains(t, output, "✅ No vulnerabilities found.")
+	assertContains(t, output, "Scanning workflow: "+workflowPath)
 	assertContains(t, output, "Workflows scanned: 1")
 	assertContains(t, output, "Actions scanned: 0")
 	assertContains(t, output, "Vulnerabilities found: 0")
