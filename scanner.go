@@ -218,14 +218,6 @@ func ScanAction(actionDir string, catalog VulnerabilityCatalog) ([]string, error
 	return foundVulnerabilities, nil
 }
 
-// ScanDependencyFile scans a single supported dependency file.
-func ScanDependencyFile(path string, catalog VulnerabilityCatalog) ([]string, error) {
-	vulnerablePackageMap := buildVulnerablePackageMap(catalog.NpmPackages)
-	pypiPackageMap := buildVulnerablePypiPackageMap(catalog.PypiPackages)
-
-	return scanDependencyFile(path, vulnerablePackageMap, pypiPackageMap)
-}
-
 func scanDependencyFile(path string, vulnerablePackageMap, pypiPackageMap VulnerablePackageMap) ([]string, error) {
 	filename := filepath.Base(path)
 	if matched, err := filepath.Match("requirements*.txt", filename); err != nil {
