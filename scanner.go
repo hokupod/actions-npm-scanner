@@ -218,6 +218,36 @@ func ScanAction(actionDir string, catalog VulnerabilityCatalog) ([]string, error
 	return foundVulnerabilities, nil
 }
 
+// ScanDependencyFile scans a single supported dependency file.
+func ScanDependencyFile(path string, catalog VulnerabilityCatalog) ([]string, error) {
+	vulnerablePackageMap := buildVulnerablePackageMap(catalog.NpmPackages)
+	pypiPackageMap := buildVulnerablePypiPackageMap(catalog.PypiPackages)
+
+	filename := filepath.Base(path)
+	if matched, err := filepath.Match("requirements*.txt", filename); err != nil {
+		return nil, err
+	} else if matched {
+		return scanRequirementsTxt(path, pypiPackageMap)
+	}
+
+	switch filename {
+	case "package.json":
+		return scanPackageJSONOptimized(path, vulnerablePackageMap)
+	case "package-lock.json":
+		return scanPackageLockJSONOptimized(path, vulnerablePackageMap)
+	case "yarn.lock":
+		return scanYarnLockOptimized(path, vulnerablePackageMap)
+	case "pnpm-lock.yaml":
+		return scanPnpmLockOptimized(path, vulnerablePackageMap)
+	case "Pipfile.lock":
+		return scanPipfileLock(path, pypiPackageMap)
+	case "poetry.lock", "uv.lock":
+		return scanPythonPackageLock(path, pypiPackageMap)
+	default:
+		return nil, fmt.Errorf("unsupported dependency file: %s", path)
+	}
+}
+
 // Optimized scanning functions using VulnerablePackageMap
 
 func scanPackageJSONOptimized(path string, vulnerablePackageMap VulnerablePackageMap) ([]string, error) {
