@@ -9,7 +9,7 @@ A Go-based CLI tool that scans GitHub Actions workflows for vulnerable NPM packa
 
 This tool was developed in response to the [Shai-Hulud supply chain attack](https://www.stepsecurity.io/blog/ctrl-tinycolor-and-40-npm-packages-compromised) that compromised over 40 NPM packages in late 2024, including the widely-used `@ctrl/tinycolor` package (2+ million weekly downloads).
 
-It also includes Mini Shai-Hulud indicators from the April 2026 campaign covering compromised npm packages (`@cap-js/sqlite`, `@cap-js/postgres`, `@cap-js/db-service`, `mbt`, `intercom-client`) and the PyPI `lightning` package.
+It also includes Mini Shai-Hulud indicators tracked by Socket as of May 12, 2026, covering 405 npm artifacts and the PyPI `lightning` package versions 2.6.2 and 2.6.3.
 
 The attack demonstrated sophisticated techniques including:
 - Self-propagating malware across maintainer packages
@@ -25,7 +25,7 @@ In late 2025, the "Second Coming" NPM contamination campaign was discovered, whi
 
 - 🔍 **Comprehensive Scanning**: Scans GitHub Actions workflow files (.yml/.yaml)
 - 🚨 **Vulnerability Detection**: Identifies vulnerable NPM and PyPI packages in actions
-- 📦 **Curated Package List**: Contains 330+ packages identified in the Shai-Hulud attack
+- 📦 **Curated Package List**: Contains 330+ Shai-Hulud packages plus Mini Shai-Hulud NPM/PyPI artifacts
 - 🐍 **Python Lockfile Coverage**: Scans `requirements*.txt`, `Pipfile.lock`, `poetry.lock`, and `uv.lock`
 - 📂 **Flexible Input**: Supports both single file and directory scanning
 - ⚡ **Fast Performance**: Leverages Go concurrency for efficient scanning
@@ -189,7 +189,7 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 このツールは、2024年後半に発生した[Shai-Hulud サプライチェーン攻撃](https://www.stepsecurity.io/blog/ctrl-tinycolor-and-40-npm-packages-compromised)への対応として開発されました。この攻撃では、週間200万以上のダウンロード数を誇る`@ctrl/tinycolor`を含む40以上のNPMパッケージが侵害されました。
 
-2026年4月のMini Shai-Huludキャンペーンで確認されたnpmパッケージ（`@cap-js/sqlite`、`@cap-js/postgres`、`@cap-js/db-service`、`mbt`、`intercom-client`）とPyPI `lightning`も検出対象に含めています。
+2026年5月12日時点でSocketが追跡しているMini Shai-HuludのNPM 405 artifactsと、PyPI `lightning` 2.6.2/2.6.3も検出対象に含めています。
 
 この攻撃では以下のような高度な技術が使用されました：
 - メンテナパッケージ間での自己増殖型マルウェア
@@ -205,7 +205,7 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 - 🔍 **包括的スキャン**: GitHub Actionsワークフローファイル(.yml/.yaml)をスキャン
 - 🚨 **脆弱性検出**: アクション内の脆弱なNPM/PyPIパッケージを特定
-- 📦 **厳選されたパッケージリスト**: Shai-Hulud攻撃で特定された330以上のパッケージを含む
+- 📦 **厳選されたパッケージリスト**: Shai-Hulud攻撃の330以上のパッケージとMini Shai-HuludのNPM/PyPI artifactsを含む
 - 🐍 **Pythonロックファイル対応**: `requirements*.txt`、`Pipfile.lock`、`poetry.lock`、`uv.lock`をスキャン
 - 📂 **柔軟な入力**: 単一ファイルとディレクトリスキャンの両方をサポート
 - ⚡ **高速パフォーマンス**: Goの並行処理を活用した効率的なスキャン
@@ -255,8 +255,8 @@ go run . .github/workflows/
 
 1. **YAML解析**: GitHub Actionsワークフローファイルを解析してアクション参照を抽出
 2. **リポジトリクローン**: go-gitを使用して各参照されたアクションリポジトリをダウンロード
-3. **パッケージ分析**: package.jsonとpackage-lock.jsonファイルを検索
-4. **脆弱性マッチング**: 発見されたパッケージをShai-Hulud攻撃で侵害されたパッケージの静的リストと比較
+3. **パッケージ分析**: npmとPythonの依存関係ファイルを検索
+4. **脆弱性マッチング**: 発見されたパッケージをShai-Hulud/Mini Shai-Huludの静的IoCカタログと比較
 5. **レポート**: 発見された脆弱性について詳細な出力を提供
 
 ## 開発

@@ -752,7 +752,9 @@ func TestMiniShaiHuludNpmPackages(t *testing.T) {
 	packageJSON := `{
 	  "dependencies": {
 	    "@cap-js/sqlite": "2.2.2",
-	    "intercom-client": "7.0.4"
+	    "intercom-client": "7.0.4",
+	    "@tanstack/react-router": "1.169.8",
+	    "@mistralai/mistralai": "2.2.4"
 	  }
 	}`
 	if err := ioutil.WriteFile(filepath.Join(tmpDir, "package.json"), []byte(packageJSON), 0644); err != nil {
@@ -764,6 +766,9 @@ func TestMiniShaiHuludNpmPackages(t *testing.T) {
 	  "packages": {
 	    "node_modules/@cap-js/postgres": {
 	      "version": "2.2.2"
+	    },
+	    "node_modules/@uipath/cli": {
+	      "version": "1.0.1"
 	    }
 	  }
 	}`
@@ -773,6 +778,8 @@ func TestMiniShaiHuludNpmPackages(t *testing.T) {
 
 	yarnLock := `"@cap-js/db-service@^2.10.1":
   version "2.10.1"
+"@squawk/weather@^0.5.10":
+  version "0.5.10"
 `
 	if err := ioutil.WriteFile(filepath.Join(tmpDir, "yarn.lock"), []byte(yarnLock), 0644); err != nil {
 		t.Fatal(err)
@@ -781,6 +788,8 @@ func TestMiniShaiHuludNpmPackages(t *testing.T) {
 	pnpmLock := `
 packages:
   /mbt/1.2.48:
+    resolution: {integrity: sha512-...}
+  /@tallyui/core/0.2.3:
     resolution: {integrity: sha512-...}
 `
 	if err := ioutil.WriteFile(filepath.Join(tmpDir, "pnpm-lock.yaml"), []byte(pnpmLock), 0644); err != nil {
@@ -792,7 +801,18 @@ packages:
 		t.Fatalf("ScanAction() error = %v", err)
 	}
 
-	expectedPackages := []string{"@cap-js/sqlite", "@cap-js/postgres", "@cap-js/db-service", "mbt", "intercom-client"}
+	expectedPackages := []string{
+		"@cap-js/sqlite",
+		"@cap-js/postgres",
+		"@cap-js/db-service",
+		"mbt",
+		"intercom-client",
+		"@tanstack/react-router",
+		"@mistralai/mistralai",
+		"@uipath/cli",
+		"@squawk/weather",
+		"@tallyui/core",
+	}
 	for _, expectedPackage := range expectedPackages {
 		found := false
 		for _, vulnerability := range vulnerabilities {
@@ -805,6 +825,72 @@ packages:
 			t.Errorf("expected vulnerability for %s, got %v", expectedPackage, vulnerabilities)
 		}
 	}
+}
+
+func TestMiniShaiHuludCatalogCoverage(t *testing.T) {
+	const expectedNewNpmArtifacts = 400
+	const expectedTotalMiniNpmArtifacts = 405
+
+	newNpmArtifacts := countPackageVersions(GetMiniShaiHuludNpmPackages())
+	if newNpmArtifacts != expectedNewNpmArtifacts {
+		t.Fatalf("countPackageVersions(GetMiniShaiHuludNpmPackages()) = %d; expected %d", newNpmArtifacts, expectedNewNpmArtifacts)
+	}
+
+	initialMiniNpmPackages := []string{
+		"@cap-js/sqlite",
+		"@cap-js/postgres",
+		"@cap-js/db-service",
+		"mbt",
+		"intercom-client",
+	}
+	totalMiniNpmArtifacts := newNpmArtifacts
+	for _, packageName := range initialMiniNpmPackages {
+		pkg, ok := findPackage(GetVulnerableNpmPackages(), packageName)
+		if !ok {
+			t.Fatalf("expected initial Mini Shai-Hulud package %s in catalog", packageName)
+		}
+		totalMiniNpmArtifacts += len(pkg.Versions)
+	}
+	if totalMiniNpmArtifacts != expectedTotalMiniNpmArtifacts {
+		t.Fatalf("Mini Shai-Hulud NPM artifact count = %d; expected %d", totalMiniNpmArtifacts, expectedTotalMiniNpmArtifacts)
+	}
+
+	packageMap := buildVulnerablePackageMap(GetVulnerableNpmPackages())
+	expectedMatches := map[string]string{
+		"@tanstack/react-router": "1.169.8",
+		"@mistralai/mistralai":   "2.2.4",
+		"@squawk/weather":        "0.5.10",
+		"@uipath/cli":            "1.0.1",
+		"@tallyui/core":          "0.2.3",
+		"@cap-js/sqlite":         "2.2.2",
+		"intercom-client":        "7.0.4",
+	}
+	for packageName, version := range expectedMatches {
+		if isVuln, _ := packageMap.isVulnerable(packageName, version); !isVuln {
+			t.Errorf("expected %s@%s to be vulnerable", packageName, version)
+		}
+	}
+
+	if isVuln, _ := packageMap.isVulnerable("@tanstack/react-router", "1.169.9"); isVuln {
+		t.Error("expected patched @tanstack/react-router@1.169.9 to be safe")
+	}
+}
+
+func countPackageVersions(packages []VulnerablePackage) int {
+	count := 0
+	for _, pkg := range packages {
+		count += len(pkg.Versions)
+	}
+	return count
+}
+
+func findPackage(packages []VulnerablePackage, name string) (VulnerablePackage, bool) {
+	for _, pkg := range packages {
+		if pkg.Name == name {
+			return pkg, true
+		}
+	}
+	return VulnerablePackage{}, false
 }
 
 func TestMiniShaiHuludPypiPackages(t *testing.T) {

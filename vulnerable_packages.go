@@ -28,7 +28,7 @@ func GetVulnerablePackages() []VulnerablePackage {
 
 // GetVulnerableNpmPackages returns a list of vulnerable NPM packages.
 func GetVulnerableNpmPackages() []VulnerablePackage {
-	return []VulnerablePackage{
+	basePackages := []VulnerablePackage{
 		{Name: "02-echo", Versions: []string{"0.0.7"}},
 		{Name: "@accordproject/concerto-analysis", Versions: []string{"3.24.1"}},
 		{Name: "@accordproject/concerto-linter", Versions: []string{"3.24.1"}},
@@ -1031,11 +1031,217 @@ func GetVulnerableNpmPackages() []VulnerablePackage {
 		{Name: "zuper-sdk", Versions: []string{"1.0.57"}},
 		{Name: "zuper-stream", Versions: []string{"2.0.9"}},
 	}
+
+	return mergeVulnerablePackageLists(basePackages, GetMiniShaiHuludNpmPackages())
 }
 
 // GetVulnerablePypiPackages returns a list of vulnerable PyPI packages.
 func GetVulnerablePypiPackages() []VulnerablePackage {
 	return []VulnerablePackage{
 		{Name: "lightning", Versions: []string{"2.6.2", "2.6.3"}},
+	}
+}
+
+func mergeVulnerablePackageLists(packageLists ...[]VulnerablePackage) []VulnerablePackage {
+	merged := make([]VulnerablePackage, 0)
+	indexByName := make(map[string]int)
+	seenVersions := make(map[string]map[string]bool)
+
+	for _, packageList := range packageLists {
+		for _, pkg := range packageList {
+			index, exists := indexByName[pkg.Name]
+			if !exists {
+				indexByName[pkg.Name] = len(merged)
+				seenVersions[pkg.Name] = make(map[string]bool, len(pkg.Versions))
+				merged = append(merged, VulnerablePackage{Name: pkg.Name})
+				index = len(merged) - 1
+			}
+
+			for _, version := range pkg.Versions {
+				if seenVersions[pkg.Name][version] {
+					continue
+				}
+				seenVersions[pkg.Name][version] = true
+				merged[index].Versions = append(merged[index].Versions, version)
+			}
+		}
+	}
+
+	return merged
+}
+
+// GetMiniShaiHuludNpmPackages returns NPM artifacts from the Socket Mini Shai-Hulud
+// campaign page as of 2026-05-12. Composer artifacts are intentionally out of scope.
+func GetMiniShaiHuludNpmPackages() []VulnerablePackage {
+	return []VulnerablePackage{
+		{Name: "@beproduct/nestjs-auth", Versions: []string{"0.1.18", "0.1.19", "0.1.17", "0.1.16", "0.1.15", "0.1.13", "0.1.14", "0.1.8", "0.1.6", "0.1.9", "0.1.2", "0.1.5", "0.1.11", "0.1.4", "0.1.3", "0.1.7", "0.1.10", "0.1.12"}},
+		{Name: "@dirigible-ai/sdk", Versions: []string{"0.6.3", "0.6.2"}},
+		{Name: "@draftauth/client", Versions: []string{"0.2.2", "0.2.1"}},
+		{Name: "@draftauth/core", Versions: []string{"0.13.1", "0.13.2"}},
+		{Name: "@draftlab/auth", Versions: []string{"0.24.2", "0.24.1"}},
+		{Name: "@draftlab/auth-router", Versions: []string{"0.5.1", "0.5.2"}},
+		{Name: "@draftlab/db", Versions: []string{"0.16.2", "0.16.1"}},
+		{Name: "@mesadev/rest", Versions: []string{"0.28.3"}},
+		{Name: "@mesadev/saguaro", Versions: []string{"0.4.22"}},
+		{Name: "@mesadev/sdk", Versions: []string{"0.28.3"}},
+		{Name: "@mistralai/mistralai", Versions: []string{"2.2.4", "2.2.3", "2.2.2"}},
+		{Name: "@mistralai/mistralai-azure", Versions: []string{"1.7.3", "1.7.1", "1.7.2"}},
+		{Name: "@mistralai/mistralai-gcp", Versions: []string{"1.7.3", "1.7.1", "1.7.2"}},
+		{Name: "@ml-toolkit-ts/preprocessing", Versions: []string{"1.0.2", "1.0.3"}},
+		{Name: "@ml-toolkit-ts/xgboost", Versions: []string{"1.0.3", "1.0.4"}},
+		{Name: "@squawk/airport-data", Versions: []string{"0.7.8", "0.7.7", "0.7.6", "0.7.5", "0.7.4"}},
+		{Name: "@squawk/airports", Versions: []string{"0.6.6", "0.6.5", "0.6.4", "0.6.3", "0.6.2"}},
+		{Name: "@squawk/airspace", Versions: []string{"0.8.5", "0.8.3", "0.8.4", "0.8.2", "0.8.1"}},
+		{Name: "@squawk/airspace-data", Versions: []string{"0.5.7", "0.5.5", "0.5.6", "0.5.4", "0.5.3"}},
+		{Name: "@squawk/airway-data", Versions: []string{"0.5.8", "0.5.7", "0.5.6", "0.5.5", "0.5.4"}},
+		{Name: "@squawk/airways", Versions: []string{"0.4.6", "0.4.4", "0.4.5", "0.4.3", "0.4.2"}},
+		{Name: "@squawk/fix-data", Versions: []string{"0.6.8", "0.6.7", "0.6.6", "0.6.5", "0.6.4"}},
+		{Name: "@squawk/fixes", Versions: []string{"0.3.6", "0.3.5", "0.3.4", "0.3.3", "0.3.2"}},
+		{Name: "@squawk/flight-math", Versions: []string{"0.5.8", "0.5.7", "0.5.6", "0.5.5", "0.5.4"}},
+		{Name: "@squawk/flightplan", Versions: []string{"0.5.6", "0.5.5", "0.5.4", "0.5.3", "0.5.2"}},
+		{Name: "@squawk/geo", Versions: []string{"0.4.8", "0.4.7", "0.4.6", "0.4.5", "0.4.4"}},
+		{Name: "@squawk/icao-registry", Versions: []string{"0.5.6", "0.5.5", "0.5.4", "0.5.3", "0.5.2"}},
+		{Name: "@squawk/icao-registry-data", Versions: []string{"0.8.8", "0.8.6", "0.8.7", "0.8.5", "0.8.4"}},
+		{Name: "@squawk/mcp", Versions: []string{"0.9.5", "0.9.4", "0.9.3", "0.9.2", "0.9.1"}},
+		{Name: "@squawk/navaid-data", Versions: []string{"0.6.8", "0.6.7", "0.6.6", "0.6.5", "0.6.4"}},
+		{Name: "@squawk/navaids", Versions: []string{"0.4.6", "0.4.5", "0.4.4", "0.4.3", "0.4.2"}},
+		{Name: "@squawk/notams", Versions: []string{"0.3.10", "0.3.9", "0.3.8", "0.3.7", "0.3.6"}},
+		{Name: "@squawk/procedure-data", Versions: []string{"0.7.7", "0.7.5", "0.7.6", "0.7.4", "0.7.3"}},
+		{Name: "@squawk/procedures", Versions: []string{"0.5.6", "0.5.4", "0.5.5", "0.5.3", "0.5.2"}},
+		{Name: "@squawk/types", Versions: []string{"0.8.5", "0.8.3", "0.8.4", "0.8.2", "0.8.1"}},
+		{Name: "@squawk/units", Versions: []string{"0.4.7", "0.4.5", "0.4.6", "0.4.4", "0.4.3"}},
+		{Name: "@squawk/weather", Versions: []string{"0.5.10", "0.5.8", "0.5.9", "0.5.7", "0.5.6"}},
+		{Name: "@supersurkhet/cli", Versions: []string{"0.0.7", "0.0.6", "0.0.5", "0.0.4", "0.0.3", "0.0.2"}},
+		{Name: "@supersurkhet/sdk", Versions: []string{"0.0.7", "0.0.6", "0.0.5", "0.0.4", "0.0.3", "0.0.2"}},
+		{Name: "@tallyui/components", Versions: []string{"1.0.3", "1.0.2", "1.0.1"}},
+		{Name: "@tallyui/connector-medusa", Versions: []string{"1.0.3", "1.0.2", "1.0.1"}},
+		{Name: "@tallyui/connector-shopify", Versions: []string{"1.0.3", "1.0.2", "1.0.1"}},
+		{Name: "@tallyui/connector-vendure", Versions: []string{"1.0.3", "1.0.2", "1.0.1"}},
+		{Name: "@tallyui/connector-woocommerce", Versions: []string{"1.0.3", "1.0.2", "1.0.1"}},
+		{Name: "@tallyui/core", Versions: []string{"0.2.3", "0.2.2", "0.2.1"}},
+		{Name: "@tallyui/database", Versions: []string{"1.0.3", "1.0.2", "1.0.1"}},
+		{Name: "@tallyui/pos", Versions: []string{"0.1.3", "0.1.2", "0.1.1"}},
+		{Name: "@tallyui/storage-sqlite", Versions: []string{"0.2.3", "0.2.2", "0.2.1"}},
+		{Name: "@tallyui/theme", Versions: []string{"0.2.3", "0.2.2", "0.2.1"}},
+		{Name: "@tanstack/arktype-adapter", Versions: []string{"1.166.12", "1.166.15"}},
+		{Name: "@tanstack/eslint-plugin-router", Versions: []string{"1.161.9", "1.161.12"}},
+		{Name: "@tanstack/eslint-plugin-start", Versions: []string{"0.0.4", "0.0.7"}},
+		{Name: "@tanstack/history", Versions: []string{"1.161.9", "1.161.12"}},
+		{Name: "@tanstack/nitro-v2-vite-plugin", Versions: []string{"1.154.12", "1.154.15"}},
+		{Name: "@tanstack/react-router", Versions: []string{"1.169.5", "1.169.8"}},
+		{Name: "@tanstack/react-router-devtools", Versions: []string{"1.166.16", "1.166.19"}},
+		{Name: "@tanstack/react-router-ssr-query", Versions: []string{"1.166.15", "1.166.18"}},
+		{Name: "@tanstack/react-start", Versions: []string{"1.167.68", "1.167.71"}},
+		{Name: "@tanstack/react-start-client", Versions: []string{"1.166.51", "1.166.54"}},
+		{Name: "@tanstack/react-start-rsc", Versions: []string{"0.0.47", "0.0.50"}},
+		{Name: "@tanstack/react-start-server", Versions: []string{"1.166.55", "1.166.58"}},
+		{Name: "@tanstack/router-cli", Versions: []string{"1.166.46", "1.166.49"}},
+		{Name: "@tanstack/router-core", Versions: []string{"1.169.5", "1.169.8"}},
+		{Name: "@tanstack/router-devtools", Versions: []string{"1.166.16", "1.166.19"}},
+		{Name: "@tanstack/router-devtools-core", Versions: []string{"1.167.6", "1.167.9"}},
+		{Name: "@tanstack/router-generator", Versions: []string{"1.166.45", "1.166.48"}},
+		{Name: "@tanstack/router-plugin", Versions: []string{"1.167.38", "1.167.41"}},
+		{Name: "@tanstack/router-ssr-query-core", Versions: []string{"1.168.3", "1.168.6"}},
+		{Name: "@tanstack/router-utils", Versions: []string{"1.161.11", "1.161.14"}},
+		{Name: "@tanstack/router-vite-plugin", Versions: []string{"1.166.53", "1.166.56"}},
+		{Name: "@tanstack/solid-router", Versions: []string{"1.169.5", "1.169.8"}},
+		{Name: "@tanstack/solid-router-devtools", Versions: []string{"1.166.16", "1.166.19"}},
+		{Name: "@tanstack/solid-router-ssr-query", Versions: []string{"1.166.15", "1.166.18"}},
+		{Name: "@tanstack/solid-start", Versions: []string{"1.167.65", "1.167.68"}},
+		{Name: "@tanstack/solid-start-client", Versions: []string{"1.166.50", "1.166.53"}},
+		{Name: "@tanstack/solid-start-server", Versions: []string{"1.166.54", "1.166.57"}},
+		{Name: "@tanstack/start-client-core", Versions: []string{"1.168.5", "1.168.8"}},
+		{Name: "@tanstack/start-fn-stubs", Versions: []string{"1.161.9", "1.161.12"}},
+		{Name: "@tanstack/start-plugin-core", Versions: []string{"1.169.23", "1.169.26"}},
+		{Name: "@tanstack/start-server-core", Versions: []string{"1.167.33", "1.167.36"}},
+		{Name: "@tanstack/start-static-server-functions", Versions: []string{"1.166.44", "1.166.47"}},
+		{Name: "@tanstack/start-storage-context", Versions: []string{"1.166.38", "1.166.41"}},
+		{Name: "@tanstack/valibot-adapter", Versions: []string{"1.166.12", "1.166.15"}},
+		{Name: "@tanstack/virtual-file-routes", Versions: []string{"1.161.10", "1.161.13"}},
+		{Name: "@tanstack/vue-router", Versions: []string{"1.169.5", "1.169.8"}},
+		{Name: "@tanstack/vue-router-devtools", Versions: []string{"1.166.16", "1.166.19"}},
+		{Name: "@tanstack/vue-router-ssr-query", Versions: []string{"1.166.15", "1.166.18"}},
+		{Name: "@tanstack/vue-start", Versions: []string{"1.167.61", "1.167.64"}},
+		{Name: "@tanstack/vue-start-client", Versions: []string{"1.166.46", "1.166.49"}},
+		{Name: "@tanstack/vue-start-server", Versions: []string{"1.166.50", "1.166.53"}},
+		{Name: "@tanstack/zod-adapter", Versions: []string{"1.166.12", "1.166.15"}},
+		{Name: "@taskflow-corp/cli", Versions: []string{"0.1.29", "0.1.28", "0.1.27", "0.1.26", "0.1.25", "0.1.24"}},
+		{Name: "@tolka/cli", Versions: []string{"1.0.5", "1.0.6", "1.0.4", "1.0.3", "1.0.2"}},
+		{Name: "@uipath/access-policy-sdk", Versions: []string{"0.3.1"}},
+		{Name: "@uipath/access-policy-tool", Versions: []string{"0.3.1"}},
+		{Name: "@uipath/admin-tool", Versions: []string{"0.1.1"}},
+		{Name: "@uipath/agent-sdk", Versions: []string{"1.0.2"}},
+		{Name: "@uipath/agent-tool", Versions: []string{"1.0.1"}},
+		{Name: "@uipath/agent.sdk", Versions: []string{"0.0.18"}},
+		{Name: "@uipath/aops-policy-tool", Versions: []string{"0.3.1"}},
+		{Name: "@uipath/ap-chat", Versions: []string{"1.5.7"}},
+		{Name: "@uipath/api-workflow-tool", Versions: []string{"1.0.1"}},
+		{Name: "@uipath/apollo-core", Versions: []string{"5.9.2"}},
+		{Name: "@uipath/apollo-react", Versions: []string{"4.24.5"}},
+		{Name: "@uipath/apollo-wind", Versions: []string{"2.16.2"}},
+		{Name: "@uipath/auth", Versions: []string{"1.0.1"}},
+		{Name: "@uipath/case-tool", Versions: []string{"1.0.1"}},
+		{Name: "@uipath/cli", Versions: []string{"1.0.1"}},
+		{Name: "@uipath/codedagent-tool", Versions: []string{"1.0.1"}},
+		{Name: "@uipath/codedagents-tool", Versions: []string{"0.1.12"}},
+		{Name: "@uipath/codedapp-tool", Versions: []string{"1.0.1"}},
+		{Name: "@uipath/common", Versions: []string{"1.0.1"}},
+		{Name: "@uipath/context-grounding-tool", Versions: []string{"0.1.1"}},
+		{Name: "@uipath/data-fabric-tool", Versions: []string{"1.0.2"}},
+		{Name: "@uipath/docsai-tool", Versions: []string{"1.0.1"}},
+		{Name: "@uipath/filesystem", Versions: []string{"1.0.1"}},
+		{Name: "@uipath/flow-tool", Versions: []string{"1.0.2"}},
+		{Name: "@uipath/functions-tool", Versions: []string{"1.0.1"}},
+		{Name: "@uipath/gov-tool", Versions: []string{"0.3.1"}},
+		{Name: "@uipath/identity-tool", Versions: []string{"0.1.1"}},
+		{Name: "@uipath/insights-sdk", Versions: []string{"1.0.1"}},
+		{Name: "@uipath/insights-tool", Versions: []string{"1.0.1"}},
+		{Name: "@uipath/integrationservice-sdk", Versions: []string{"1.0.2"}},
+		{Name: "@uipath/integrationservice-tool", Versions: []string{"1.0.2"}},
+		{Name: "@uipath/llmgw-tool", Versions: []string{"1.0.1"}},
+		{Name: "@uipath/maestro-sdk", Versions: []string{"1.0.1"}},
+		{Name: "@uipath/maestro-tool", Versions: []string{"1.0.1"}},
+		{Name: "@uipath/orchestrator-tool", Versions: []string{"1.0.1"}},
+		{Name: "@uipath/packager-tool-apiworkflow", Versions: []string{"0.0.19"}},
+		{Name: "@uipath/packager-tool-bpmn", Versions: []string{"0.0.9"}},
+		{Name: "@uipath/packager-tool-case", Versions: []string{"0.0.9"}},
+		{Name: "@uipath/packager-tool-connector", Versions: []string{"0.0.19"}},
+		{Name: "@uipath/packager-tool-flow", Versions: []string{"0.0.19"}},
+		{Name: "@uipath/packager-tool-functions", Versions: []string{"0.1.1"}},
+		{Name: "@uipath/packager-tool-webapp", Versions: []string{"1.0.6"}},
+		{Name: "@uipath/packager-tool-workflowcompiler", Versions: []string{"0.0.16"}},
+		{Name: "@uipath/packager-tool-workflowcompiler-browser", Versions: []string{"0.0.34"}},
+		{Name: "@uipath/platform-tool", Versions: []string{"1.0.1"}},
+		{Name: "@uipath/project-packager", Versions: []string{"1.1.16"}},
+		{Name: "@uipath/resource-tool", Versions: []string{"1.0.1"}},
+		{Name: "@uipath/resourcecatalog-tool", Versions: []string{"0.1.1"}},
+		{Name: "@uipath/resources-tool", Versions: []string{"0.1.11"}},
+		{Name: "@uipath/robot", Versions: []string{"1.3.4"}},
+		{Name: "@uipath/rpa-legacy-tool", Versions: []string{"1.0.1"}},
+		{Name: "@uipath/rpa-tool", Versions: []string{"0.9.5"}},
+		{Name: "@uipath/solution-packager", Versions: []string{"0.0.35"}},
+		{Name: "@uipath/solution-tool", Versions: []string{"1.0.1"}},
+		{Name: "@uipath/solutionpackager-sdk", Versions: []string{"1.0.11"}},
+		{Name: "@uipath/solutionpackager-tool-core", Versions: []string{"0.0.34"}},
+		{Name: "@uipath/tasks-tool", Versions: []string{"1.0.1"}},
+		{Name: "@uipath/telemetry", Versions: []string{"0.0.7"}},
+		{Name: "@uipath/test-manager-tool", Versions: []string{"1.0.2"}},
+		{Name: "@uipath/tool-workflowcompiler", Versions: []string{"0.0.12"}},
+		{Name: "@uipath/traces-tool", Versions: []string{"1.0.1"}},
+		{Name: "@uipath/ui-widgets-multi-file-upload", Versions: []string{"1.0.1"}},
+		{Name: "@uipath/uipath-python-bridge", Versions: []string{"1.0.1"}},
+		{Name: "@uipath/vertical-solutions-tool", Versions: []string{"1.0.1"}},
+		{Name: "@uipath/vss", Versions: []string{"0.1.6"}},
+		{Name: "@uipath/widget.sdk", Versions: []string{"1.2.3"}},
+		{Name: "agentwork-cli", Versions: []string{"0.1.4", "0.1.5"}},
+		{Name: "cmux-agent-mcp", Versions: []string{"0.1.8", "0.1.7", "0.1.6", "0.1.5", "0.1.4", "0.1.3"}},
+		{Name: "cross-stitch", Versions: []string{"1.1.7", "1.1.5", "1.1.6", "1.1.4", "1.1.3"}},
+		{Name: "git-branch-selector", Versions: []string{"1.3.7", "1.3.6", "1.3.5", "1.3.4", "1.3.3"}},
+		{Name: "git-git-git", Versions: []string{"1.0.12", "1.0.11", "1.0.10", "1.0.9", "1.0.8"}},
+		{Name: "ml-toolkit-ts", Versions: []string{"1.0.5", "1.0.4"}},
+		{Name: "nextmove-mcp", Versions: []string{"0.1.7", "0.1.6", "0.1.5", "0.1.4", "0.1.3"}},
+		{Name: "safe-action", Versions: []string{"0.8.4", "0.8.3"}},
+		{Name: "ts-dna", Versions: []string{"3.0.5", "3.0.4", "3.0.3", "3.0.2", "3.0.1"}},
+		{Name: "wot-api", Versions: []string{"0.8.3", "0.8.4", "0.8.2", "0.8.1"}},
 	}
 }

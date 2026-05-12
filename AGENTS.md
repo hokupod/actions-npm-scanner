@@ -106,7 +106,7 @@ git ls-remote origin refs/heads/main refs/tags/vX.Y.Z refs/tags/vX.Y.Z^{}
 - Mini Shai-HuludのNPM/PyPI IoC検出テスト
 
 ### Mini Shai-Hulud対応
-- NPM IoC（@cap-js/sqlite、@cap-js/postgres、@cap-js/db-service、mbt、intercom-client）を追加
+- 2026年5月12日時点でSocketが追跡するMini Shai-Hulud NPM 405 artifactsを静的カタログに追加
 - PyPI lightning 2.6.2/2.6.3を追加
 - Composer/Packagist IoCは現時点では対象外
 
