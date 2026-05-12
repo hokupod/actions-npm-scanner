@@ -150,6 +150,10 @@ func formatVulnerabilityMessage(pkgName, version, filename string, vulnerablePac
 
 // ScanAction scans a downloaded action for vulnerable packages.
 func ScanAction(actionDir string, catalog VulnerabilityCatalog) ([]string, error) {
+	return scanAction(actionDir, catalog, true)
+}
+
+func scanAction(actionDir string, catalog VulnerabilityCatalog, verbose bool) ([]string, error) {
 	var foundVulnerabilities []string
 
 	// Build optimized vulnerability map once
@@ -163,53 +167,69 @@ func ScanAction(actionDir string, catalog VulnerabilityCatalog) ([]string, error
 
 	// Scan package.json
 	if _, err := os.Stat(packageJSONPath); err == nil {
-		fmt.Println("    🔍 Scanning package.json...")
+		if verbose {
+			fmt.Println("    🔍 Scanning package.json...")
+		}
 		vulnerabilities, err := scanPackageJSONOptimized(packageJSONPath, vulnerablePackageMap)
 		if err != nil {
 			return nil, err
 		}
 		foundVulnerabilities = append(foundVulnerabilities, vulnerabilities...)
 	} else {
-		fmt.Println("       package.json not found. Skipping.")
+		if verbose {
+			fmt.Println("       package.json not found. Skipping.")
+		}
 	}
 
 	// Scan package-lock.json
 	if _, err := os.Stat(packageLockJSONPath); err == nil {
-		fmt.Println("    🔍 Scanning package-lock.json...")
+		if verbose {
+			fmt.Println("    🔍 Scanning package-lock.json...")
+		}
 		vulnerabilities, err := scanPackageLockJSONOptimized(packageLockJSONPath, vulnerablePackageMap)
 		if err != nil {
 			return nil, err
 		}
 		foundVulnerabilities = append(foundVulnerabilities, vulnerabilities...)
 	} else {
-		fmt.Println("       package-lock.json not found. Skipping.")
+		if verbose {
+			fmt.Println("       package-lock.json not found. Skipping.")
+		}
 	}
 
 	// Scan yarn.lock
 	if _, err := os.Stat(yarnLockPath); err == nil {
-		fmt.Println("    🔍 Scanning yarn.lock...")
+		if verbose {
+			fmt.Println("    🔍 Scanning yarn.lock...")
+		}
 		vulnerabilities, err := scanYarnLockOptimized(yarnLockPath, vulnerablePackageMap)
 		if err != nil {
 			return nil, err
 		}
 		foundVulnerabilities = append(foundVulnerabilities, vulnerabilities...)
 	} else {
-		fmt.Println("       yarn.lock not found. Skipping.")
+		if verbose {
+			fmt.Println("       yarn.lock not found. Skipping.")
+		}
 	}
 
 	// Scan pnpm-lock.yaml
 	if _, err := os.Stat(pnpmLockPath); err == nil {
-		fmt.Println("    🔍 Scanning pnpm-lock.yaml...")
+		if verbose {
+			fmt.Println("    🔍 Scanning pnpm-lock.yaml...")
+		}
 		vulnerabilities, err := scanPnpmLockOptimized(pnpmLockPath, vulnerablePackageMap)
 		if err != nil {
 			return nil, err
 		}
 		foundVulnerabilities = append(foundVulnerabilities, vulnerabilities...)
 	} else {
-		fmt.Println("       pnpm-lock.yaml not found. Skipping.")
+		if verbose {
+			fmt.Println("       pnpm-lock.yaml not found. Skipping.")
+		}
 	}
 
-	vulnerabilities, err := scanPythonDependencyFiles(actionDir, pypiPackageMap)
+	vulnerabilities, err := scanPythonDependencyFiles(actionDir, pypiPackageMap, verbose)
 	if err != nil {
 		return nil, err
 	}
@@ -292,18 +312,20 @@ func scanPackageJSONOptimized(path string, vulnerablePackageMap VulnerablePackag
 	return foundVulnerabilities, nil
 }
 
-func scanPythonDependencyFiles(actionDir string, vulnerablePackageMap VulnerablePackageMap) ([]string, error) {
+func scanPythonDependencyFiles(actionDir string, vulnerablePackageMap VulnerablePackageMap, verbose bool) ([]string, error) {
 	var foundVulnerabilities []string
 
 	requirementsPaths, err := filepath.Glob(filepath.Join(actionDir, "requirements*.txt"))
 	if err != nil {
 		return nil, err
 	}
-	if len(requirementsPaths) == 0 {
+	if len(requirementsPaths) == 0 && verbose {
 		fmt.Println("       requirements*.txt not found. Skipping.")
 	}
 	for _, path := range requirementsPaths {
-		fmt.Printf("    🔍 Scanning %s...\n", filepath.Base(path))
+		if verbose {
+			fmt.Printf("    🔍 Scanning %s...\n", filepath.Base(path))
+		}
 		vulnerabilities, err := scanRequirementsTxt(path, vulnerablePackageMap)
 		if err != nil {
 			return nil, err
@@ -323,13 +345,15 @@ func scanPythonDependencyFiles(actionDir string, vulnerablePackageMap Vulnerable
 	for _, lockScanner := range lockScanners {
 		path := filepath.Join(actionDir, lockScanner.filename)
 		if _, err := os.Stat(path); err == nil {
-			fmt.Printf("    🔍 Scanning %s...\n", lockScanner.filename)
+			if verbose {
+				fmt.Printf("    🔍 Scanning %s...\n", lockScanner.filename)
+			}
 			vulnerabilities, err := lockScanner.scan(path, vulnerablePackageMap)
 			if err != nil {
 				return nil, err
 			}
 			foundVulnerabilities = append(foundVulnerabilities, vulnerabilities...)
-		} else {
+		} else if verbose {
 			fmt.Printf("       %s not found. Skipping.\n", lockScanner.filename)
 		}
 	}

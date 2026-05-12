@@ -11,7 +11,30 @@ import (
 )
 
 func TestMain(t *testing.T) {
-	output, err := runScannerCommand("workflow.yml")
+	workflowPath := writeWorkflowWithVulnerableAction(t)
+	output, err := runScannerCommand(workflowPath)
+	assertExitCode(t, err, 1, output)
+
+	expectedStrings := []string{
+		"⚠️ Found vulnerabilities.",
+		"Workflows scanned: 1",
+		"Actions scanned: 1",
+		"Vulnerabilities found: 1",
+		"Errors: 0",
+		"Vulnerability details:",
+		workflowPath + " | some-user/some-action-with-vulnerable-dep@v1: Found vulnerable package @ctrl/tinycolor with version 4.1.1 in package.json",
+	}
+
+	for _, expected := range expectedStrings {
+		assertContains(t, output, expected)
+	}
+	assertNotContains(t, output, "🔍 Scanning action")
+	assertNotContains(t, output, "package-lock.json not found. Skipping.")
+}
+
+func TestMainVerboseIncludesDetailedOutputAndSummary(t *testing.T) {
+	workflowPath := writeWorkflowWithVulnerableAction(t)
+	output, err := runScannerCommand("--verbose", workflowPath)
 	assertExitCode(t, err, 1, output)
 
 	expectedStrings := []string{
@@ -23,12 +46,11 @@ func TestMain(t *testing.T) {
 		"⚠️ Found vulnerabilities:",
 		"-  Found vulnerable package @ctrl/tinycolor with version 4.1.1 in package.json",
 		"Scan finished for action some-user/some-action-with-vulnerable-dep@v1.",
+		"Vulnerabilities found: 1",
 	}
 
 	for _, expected := range expectedStrings {
-		if !strings.Contains(output, expected) {
-			t.Errorf("expected output to contain %q, but it didn't.\nOutput:\n%s", expected, output)
-		}
+		assertContains(t, output, expected)
 	}
 }
 
@@ -43,7 +65,7 @@ jobs:
       - uses: some-user/some-action-with-vulnerable-dep@v1
 `)
 
-	output, err := runScannerCommand(workflowPath)
+	output, err := runScannerCommand("-v", workflowPath)
 	assertExitCode(t, err, 1, output)
 
 	downloadLog := "Downloading action some-user/some-action-with-vulnerable-dep@v1..."
@@ -70,15 +92,18 @@ func TestLocalScanFileWithVulnerability(t *testing.T) {
 	assertExitCode(t, err, 1, output)
 
 	expectedStrings := []string{
-		"🔍 Scanning local file:",
-		"⚠️ Found vulnerabilities:",
+		"⚠️ Found vulnerabilities.",
+		"Workflows scanned: 0",
+		"Actions scanned: 0",
+		"Vulnerabilities found: 1",
+		"Errors: 0",
+		"Vulnerability details:",
 		"Found vulnerable package @ctrl/tinycolor with version 4.1.1 in package.json",
 	}
 	for _, expected := range expectedStrings {
-		if !strings.Contains(output, expected) {
-			t.Errorf("expected output to contain %q, but it didn't.\nOutput:\n%s", expected, output)
-		}
+		assertContains(t, output, expected)
 	}
+	assertNotContains(t, output, "🔍 Scanning local file:")
 }
 
 func TestLocalScanDirectoryWithVulnerability(t *testing.T) {
@@ -93,16 +118,17 @@ func TestLocalScanDirectoryWithVulnerability(t *testing.T) {
 	assertExitCode(t, err, 1, output)
 
 	expectedStrings := []string{
-		"Scanning local path:",
-		"🔍 Scanning package.json...",
-		"⚠️ Found vulnerabilities:",
+		"⚠️ Found vulnerabilities.",
+		"Workflows scanned: 0",
+		"Actions scanned: 0",
+		"Vulnerabilities found: 1",
 		"Found vulnerable package @ctrl/tinycolor with version 4.1.1 in package.json",
 	}
 	for _, expected := range expectedStrings {
-		if !strings.Contains(output, expected) {
-			t.Errorf("expected output to contain %q, but it didn't.\nOutput:\n%s", expected, output)
-		}
+		assertContains(t, output, expected)
 	}
+	assertNotContains(t, output, "Scanning local path:")
+	assertNotContains(t, output, "🔍 Scanning package.json...")
 }
 
 func TestLocalScanCleanFile(t *testing.T) {
@@ -117,9 +143,28 @@ func TestLocalScanCleanFile(t *testing.T) {
 	output, err := runScannerCommand("--local", packageJSONPath)
 	assertExitCode(t, err, 0, output)
 
-	if !strings.Contains(output, "✅ No vulnerabilities found.") {
-		t.Errorf("expected clean output, got:\n%s", output)
-	}
+	assertContains(t, output, "✅ No vulnerabilities found.")
+	assertContains(t, output, "Workflows scanned: 0")
+	assertContains(t, output, "Actions scanned: 0")
+	assertContains(t, output, "Vulnerabilities found: 0")
+	assertContains(t, output, "Errors: 0")
+}
+
+func TestWorkflowParseErrorAppearsInSummaryWithoutFailureExit(t *testing.T) {
+	tmpDir := t.TempDir()
+	workflowPath := filepath.Join(tmpDir, "workflow.yml")
+	writeTestFile(t, workflowPath, "jobs:\n  build:\n    steps: [\n")
+
+	output, err := runScannerCommand(workflowPath)
+	assertExitCode(t, err, 0, output)
+
+	assertContains(t, output, "✅ No vulnerabilities found.")
+	assertContains(t, output, "Workflows scanned: 1")
+	assertContains(t, output, "Actions scanned: 0")
+	assertContains(t, output, "Vulnerabilities found: 0")
+	assertContains(t, output, "Errors: 1")
+	assertContains(t, output, "Error details:")
+	assertContains(t, output, "Error parsing workflow")
 }
 
 func TestLocalScanUnsupportedFile(t *testing.T) {
@@ -132,6 +177,20 @@ func TestLocalScanUnsupportedFile(t *testing.T) {
 
 	if !strings.Contains(output, "unsupported dependency file") {
 		t.Errorf("expected unsupported file error, got:\n%s", output)
+	}
+}
+
+func assertContains(t *testing.T, output, expected string) {
+	t.Helper()
+	if !strings.Contains(output, expected) {
+		t.Errorf("expected output to contain %q, but it didn't.\nOutput:\n%s", expected, output)
+	}
+}
+
+func assertNotContains(t *testing.T, output, unexpected string) {
+	t.Helper()
+	if strings.Contains(output, unexpected) {
+		t.Errorf("expected output not to contain %q.\nOutput:\n%s", unexpected, output)
 	}
 }
 
@@ -167,4 +226,17 @@ func writeTestFile(t *testing.T, path, content string) {
 	if err := os.WriteFile(path, []byte(content), 0644); err != nil {
 		t.Fatal(err)
 	}
+}
+
+func writeWorkflowWithVulnerableAction(t *testing.T) string {
+	t.Helper()
+	tmpDir := t.TempDir()
+	workflowPath := filepath.Join(tmpDir, "workflow.yml")
+	writeTestFile(t, workflowPath, `
+jobs:
+  build:
+    steps:
+      - uses: some-user/some-action-with-vulnerable-dep@v1
+`)
+	return workflowPath
 }

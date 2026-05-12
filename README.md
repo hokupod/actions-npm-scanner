@@ -89,32 +89,33 @@ go run . .github/workflows/
 go run . --local package.json
 ```
 
+Add `-v` or `--verbose` to show detailed per-action and per-file scan output before the summary.
+
 The command scans all requested targets before exiting. If any vulnerability is found, it exits with status code `1`; otherwise it exits with `0`.
 
 ## Sample Output
 
 ### Clean Scan (No Vulnerabilities)
 ```
-Scanning workflow: .github/workflows/ci.yml
-  Downloading action actions/checkout@v4...
-  🔍 Scanning action actions/checkout@v4...
-    🔍 Scanning package.json...
-    🔍 Scanning package-lock.json...
-       yarn.lock not found. Skipping.
-       pnpm-lock.yaml not found. Skipping.
-    ✅ No vulnerabilities found.
-  Scan finished for action actions/checkout@v4.
-  Downloading action actions/setup-node@v4...
-  🔍 Scanning action actions/setup-node@v4...
-    🔍 Scanning package.json...
-    🔍 Scanning package-lock.json...
-       yarn.lock not found. Skipping.
-       pnpm-lock.yaml not found. Skipping.
-    ✅ No vulnerabilities found.
-  Scan finished for action actions/setup-node@v4.
+✅ No vulnerabilities found.
+Workflows scanned: 1
+Actions scanned: 2
+Vulnerabilities found: 0
+Errors: 0
 ```
 
 ### Vulnerabilities Found
+```
+⚠️ Found vulnerabilities.
+Workflows scanned: 1
+Actions scanned: 2
+Vulnerabilities found: 1
+Errors: 0
+Vulnerability details:
+  - .github/workflows/ci.yml | some-user/vulnerable-action@v1: Found vulnerable package @ctrl/tinycolor with version 4.1.1 in package.json (dependencies)
+```
+
+### Verbose Output
 ```
 Scanning workflow: .github/workflows/ci.yml
   Downloading action actions/checkout@v4...
@@ -134,6 +135,13 @@ Scanning workflow: .github/workflows/ci.yml
     ⚠️ Found vulnerabilities:
       -  Found vulnerable package @ctrl/tinycolor with version 4.1.1 in package.json (dependencies)
   Scan finished for action some-user/vulnerable-action@v1.
+⚠️ Found vulnerabilities.
+Workflows scanned: 1
+Actions scanned: 2
+Vulnerabilities found: 1
+Errors: 0
+Vulnerability details:
+  - .github/workflows/ci.yml | some-user/vulnerable-action@v1: Found vulnerable package @ctrl/tinycolor with version 4.1.1 in package.json (dependencies)
 ```
 
 ## How It Works
