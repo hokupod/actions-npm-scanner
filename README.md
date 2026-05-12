@@ -249,23 +249,23 @@ go install github.com/hokupod/actions-npm-scanner@latest
 ### 単一ワークフローファイルのスキャン
 
 ```bash
-./actions-npm-scanner workflow.yml
+actions-npm-scanner workflow.yml
 ```
 
 ### ディレクトリ内の全ワークフローのスキャン
 
 ```bash
-./actions-npm-scanner .github/workflows/
+actions-npm-scanner .github/workflows/
 ```
 
 ### ローカル依存ファイルまたはディレクトリのスキャン
 
 ```bash
 # 単一の依存ファイルをスキャン
-./actions-npm-scanner --local package.json
+actions-npm-scanner --local package.json
 
 # ディレクトリ直下の対応依存ファイルをスキャン
-./actions-npm-scanner --local .
+actions-npm-scanner --local .
 ```
 
 ### ソースから実行
