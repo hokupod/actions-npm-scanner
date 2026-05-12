@@ -28,6 +28,7 @@ In late 2025, the "Second Coming" NPM contamination campaign was discovered, whi
 - 📦 **Curated Package List**: Contains 330+ Shai-Hulud packages plus Mini Shai-Hulud NPM/PyPI artifacts
 - 🐍 **Python Lockfile Coverage**: Scans `requirements*.txt`, `Pipfile.lock`, `poetry.lock`, and `uv.lock`
 - 📂 **Flexible Input**: Supports both single file and directory scanning
+- 💻 **Local Dependency Scanning**: Scans local dependency files or directories with `--local`
 - ⚡ **Fast Performance**: Leverages Go concurrency for efficient scanning
 - 🌐 **Git Integration**: Automatically clones and analyzes action repositories
 
@@ -65,6 +66,16 @@ actions-npm-scanner workflow.yml
 actions-npm-scanner .github/workflows/
 ```
 
+### Scan a Local Dependency File or Directory
+
+```bash
+# Scan a single dependency file
+actions-npm-scanner --local package.json
+
+# Scan supported dependency files directly under a directory
+actions-npm-scanner --local .
+```
+
 ### From Source
 
 ```bash
@@ -73,7 +84,12 @@ go run . workflow.yml
 
 # Scan directory
 go run . .github/workflows/
+
+# Scan local dependency file or directory
+go run . --local package.json
 ```
+
+The command scans all requested targets before exiting. If any vulnerability is found, it exits with status code `1`; otherwise it exits with `0`.
 
 ## Sample Output
 
@@ -208,6 +224,7 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 - 📦 **厳選されたパッケージリスト**: Shai-Hulud攻撃の330以上のパッケージとMini Shai-HuludのNPM/PyPI artifactsを含む
 - 🐍 **Pythonロックファイル対応**: `requirements*.txt`、`Pipfile.lock`、`poetry.lock`、`uv.lock`をスキャン
 - 📂 **柔軟な入力**: 単一ファイルとディレクトリスキャンの両方をサポート
+- 💻 **ローカル依存ファイルスキャン**: `--local`でローカルの依存ファイルまたはディレクトリをスキャン
 - ⚡ **高速パフォーマンス**: Goの並行処理を活用した効率的なスキャン
 - 🌐 **Git統合**: アクションリポジトリの自動クローンと分析
 
@@ -241,6 +258,16 @@ go install github.com/hokupod/actions-npm-scanner@latest
 ./actions-npm-scanner .github/workflows/
 ```
 
+### ローカル依存ファイルまたはディレクトリのスキャン
+
+```bash
+# 単一の依存ファイルをスキャン
+./actions-npm-scanner --local package.json
+
+# ディレクトリ直下の対応依存ファイルをスキャン
+./actions-npm-scanner --local .
+```
+
 ### ソースから実行
 
 ```bash
@@ -249,7 +276,12 @@ go run . workflow.yml
 
 # ディレクトリをスキャン
 go run . .github/workflows/
+
+# ローカル依存ファイルまたはディレクトリをスキャン
+go run . --local package.json
 ```
+
+コマンドは対象を最後までスキャンしてから終了します。脆弱性が1件以上見つかった場合は終了コード`1`、見つからない場合は`0`で終了します。
 
 ## 動作原理
 
