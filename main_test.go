@@ -32,6 +32,31 @@ func TestMain(t *testing.T) {
 	}
 }
 
+func TestWorkflowScanSkipsAlreadyScannedAction(t *testing.T) {
+	tmpDir := t.TempDir()
+	workflowPath := filepath.Join(tmpDir, "workflow.yml")
+	writeTestFile(t, workflowPath, `
+jobs:
+  build:
+    steps:
+      - uses: some-user/some-action-with-vulnerable-dep@v1
+      - uses: some-user/some-action-with-vulnerable-dep@v1
+`)
+
+	output, err := runScannerCommand(workflowPath)
+	assertExitCode(t, err, 1, output)
+
+	downloadLog := "Downloading action some-user/some-action-with-vulnerable-dep@v1..."
+	if count := strings.Count(output, downloadLog); count != 1 {
+		t.Errorf("expected %q once, got %d.\nOutput:\n%s", downloadLog, count, output)
+	}
+
+	skipLog := "Skipping already scanned action some-user/some-action-with-vulnerable-dep@v1."
+	if !strings.Contains(output, skipLog) {
+		t.Errorf("expected output to contain %q.\nOutput:\n%s", skipLog, output)
+	}
+}
+
 func TestLocalScanFileWithVulnerability(t *testing.T) {
 	tmpDir := t.TempDir()
 	packageJSONPath := filepath.Join(tmpDir, "package.json")

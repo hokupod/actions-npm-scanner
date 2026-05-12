@@ -50,6 +50,7 @@ func runWorkflowScan(path string, vulnerabilityCatalog VulnerabilityCatalog) (bo
 	}
 
 	foundAny := false
+	scannedActions := make(map[string]bool)
 	for _, file := range files {
 		fmt.Println("Scanning workflow:", file)
 
@@ -62,7 +63,17 @@ func runWorkflowScan(path string, vulnerabilityCatalog VulnerabilityCatalog) (bo
 		actions := ExtractActions(workflow)
 
 		for _, action := range actions {
-			if scanWorkflowAction(action, vulnerabilityCatalog) {
+			actionKey := actionScanKey(action)
+			if scannedActions[actionKey] {
+				fmt.Printf("  Skipping already scanned action %s.\n", actionKey)
+				continue
+			}
+
+			found, completed := scanWorkflowAction(action, vulnerabilityCatalog)
+			if completed {
+				scannedActions[actionKey] = true
+			}
+			if found {
 				foundAny = true
 			}
 		}
@@ -71,11 +82,15 @@ func runWorkflowScan(path string, vulnerabilityCatalog VulnerabilityCatalog) (bo
 	return foundAny, nil
 }
 
-func scanWorkflowAction(action Action, vulnerabilityCatalog VulnerabilityCatalog) bool {
+func actionScanKey(action Action) string {
+	return fmt.Sprintf("%s/%s@%s", action.Owner, action.Repo, action.Version)
+}
+
+func scanWorkflowAction(action Action, vulnerabilityCatalog VulnerabilityCatalog) (bool, bool) {
 	tmpDir, err := os.MkdirTemp("", "action-")
 	if err != nil {
 		fmt.Println("Error creating temp dir:", err)
-		return false
+		return false, false
 	}
 	defer func() {
 		if err := os.RemoveAll(tmpDir); err != nil {
@@ -86,20 +101,20 @@ func scanWorkflowAction(action Action, vulnerabilityCatalog VulnerabilityCatalog
 	fmt.Printf("  Downloading action %s/%s@%s...\n", action.Owner, action.Repo, action.Version)
 	if err := DownloadAction(action, tmpDir); err != nil {
 		fmt.Println("Error downloading action:", err)
-		return false
+		return false, false
 	}
 
 	fmt.Printf("  🔍 Scanning action %s/%s@%s...\n", action.Owner, action.Repo, action.Version)
 	vulnerabilities, err := ScanAction(tmpDir, vulnerabilityCatalog)
 	if err != nil {
 		fmt.Println("Error scanning action:", err)
-		return false
+		return false, false
 	}
 
 	printVulnerabilityResult("    ", vulnerabilities)
 	fmt.Printf("  Scan finished for action %s/%s@%s.\n", action.Owner, action.Repo, action.Version)
 
-	return len(vulnerabilities) > 0
+	return len(vulnerabilities) > 0, true
 }
 
 func runLocalScan(path string, vulnerabilityCatalog VulnerabilityCatalog) (bool, error) {
