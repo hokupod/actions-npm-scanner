@@ -20,7 +20,7 @@ func main() {
 	flag.Parse()
 
 	if flag.NArg() != 1 {
-		fmt.Println("Usage: go run . [--local] <path>")
+		fmt.Printf("Usage: %s [--local] <path>\n", filepath.Base(os.Args[0]))
 		os.Exit(1)
 	}
 
@@ -77,7 +77,11 @@ func scanWorkflowAction(action Action, vulnerabilityCatalog VulnerabilityCatalog
 		fmt.Println("Error creating temp dir:", err)
 		return false
 	}
-	defer os.RemoveAll(tmpDir)
+	defer func() {
+		if err := os.RemoveAll(tmpDir); err != nil {
+			fmt.Println("Error cleaning temp dir:", err)
+		}
+	}()
 
 	fmt.Printf("  Downloading action %s/%s@%s...\n", action.Owner, action.Repo, action.Version)
 	if err := DownloadAction(action, tmpDir); err != nil {

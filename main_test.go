@@ -1,11 +1,13 @@
 package main
 
 import (
+	"context"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestMain(t *testing.T) {
@@ -110,7 +112,9 @@ func TestLocalScanUnsupportedFile(t *testing.T) {
 
 func runScannerCommand(args ...string) (string, error) {
 	cmdArgs := append([]string{"run", "."}, args...)
-	cmd := exec.Command("go", cmdArgs...)
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, "go", cmdArgs...)
 	out, err := cmd.CombinedOutput()
 	return string(out), err
 }
