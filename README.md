@@ -89,6 +89,42 @@ go run . .github/workflows/
 go run . --local package.json
 ```
 
+### Run Manually in GitHub Actions
+
+Create a workflow such as `.github/workflows/actions-npm-scanner.yml` and run it from the GitHub Actions UI when you want to check referenced actions and local dependency files.
+
+```yaml
+name: Scan GitHub Actions dependencies
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  scan-actions:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.25.1"
+
+      - run: go install github.com/hokupod/actions-npm-scanner@latest
+
+      - name: Scan referenced actions
+        run: actions-npm-scanner .github/workflows/
+
+      - name: Scan local dependencies
+        run: actions-npm-scanner --local .
+```
+
+If either scan finds a vulnerability, that step exits with status code `1` and the job fails. Keeping the scans in separate steps makes it easier to see whether the failure came from a referenced action or a local dependency file.
+
+`actions-npm-scanner --local .` scans supported dependency files directly under the repository root. Add another `run` step with the target path when dependencies live in a subdirectory.
+
 Add `-v` or `--verbose` to show detailed per-action and per-file scan output before the summary.
 
 The command scans all requested targets before exiting. If any vulnerability is found, it exits with status code `1`; otherwise it exits with `0`.
@@ -288,6 +324,42 @@ go run . .github/workflows/
 # ローカル依存ファイルまたはディレクトリをスキャン
 go run . --local package.json
 ```
+
+### GitHub Actions で手動検知する
+
+`.github/workflows/actions-npm-scanner.yml` のようなワークフローを作成し、必要な時だけGitHub Actions画面から手動実行します。
+
+```yaml
+name: Scan GitHub Actions dependencies
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  scan-actions:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.25.1"
+
+      - run: go install github.com/hokupod/actions-npm-scanner@latest
+
+      - name: Scan referenced actions
+        run: actions-npm-scanner .github/workflows/
+
+      - name: Scan local dependencies
+        run: actions-npm-scanner --local .
+```
+
+どちらかのスキャンで脆弱性が見つかると、そのステップは終了コード`1`で失敗し、ジョブも失敗します。ステップを分けているため、参照アクションとローカル依存ファイルのどちらで検知したかをActionsログ上で確認しやすくなります。
+
+`actions-npm-scanner --local .` はリポジトリ直下の対応依存ファイルを対象にします。サブディレクトリの依存ファイルも見る場合は、対象パスごとに `run` ステップを追加してください。
 
 コマンドは対象を最後までスキャンしてから終了します。脆弱性が1件以上見つかった場合は終了コード`1`、見つからない場合は`0`で終了します。
 
