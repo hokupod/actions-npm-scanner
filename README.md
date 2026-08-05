@@ -11,6 +11,13 @@ This tool was developed in response to the [Shai-Hulud supply chain attack](http
 
 It also includes Mini Shai-Hulud indicators tracked by Socket as of May 12, 2026, covering 405 npm artifacts and the PyPI `lightning` package versions 2.6.2 and 2.6.3.
 
+On August 4, 2026, Socket reported an active compromise that began in the `keyv` and `cacheable` npm namespaces and spread to packages owned by other maintainers. The catalog snapshot in this repository, refreshed on August 5, 2026, includes all 2,236 npm artifacts across 444 unique npm packages listed in Socket's campaign data at that time:
+
+- [Socket technical analysis](https://socket.dev/blog/popular-npm-packages-in-the-keyv-and-cacheable-namespaces-compromised-in-active-supply-chain)
+- [Socket campaign tracker and affected package list](https://socket.dev/supply-chain-attacks/keyv-and-cacheable-compromise)
+
+Socket's campaign data also listed 24 Go artifacts across 8 modules. Go module scanning is outside this tool's current scope, so those entries are not included in the catalog.
+
 The attack demonstrated sophisticated techniques including:
 - Self-propagating malware across maintainer packages
 - Credential harvesting from AWS, GCP, Azure, and GitHub
@@ -25,7 +32,7 @@ In late 2025, the "Second Coming" NPM contamination campaign was discovered, whi
 
 - 🔍 **Comprehensive Scanning**: Scans GitHub Actions workflow files (.yml/.yaml)
 - 🚨 **Vulnerability Detection**: Identifies vulnerable NPM and PyPI packages in actions
-- 📦 **Curated Package List**: Contains 330+ Shai-Hulud packages plus Mini Shai-Hulud NPM/PyPI artifacts
+- 📦 **Curated Package List**: Contains static NPM/PyPI indicators from Shai-Hulud, Mini Shai-Hulud, and the keyv/cacheable compromise
 - 🐍 **Python Lockfile Coverage**: Scans `requirements*.txt`, `Pipfile.lock`, `poetry.lock`, and `uv.lock`
 - 📂 **Flexible Input**: Supports both single file and directory scanning
 - 💻 **Local Dependency Scanning**: Scans local dependency files or directories with `--local`
@@ -185,7 +192,7 @@ Vulnerability details:
 1. **YAML Parsing**: Parses GitHub Actions workflow files to extract action references
 2. **Repository Cloning**: Downloads each referenced action repository using go-git
 3. **Package Analysis**: Searches for npm and Python dependency files
-4. **Vulnerability Matching**: Compares found packages against static Shai-Hulud and Mini Shai-Hulud indicators
+4. **Vulnerability Matching**: Compares found packages against static Shai-Hulud, Mini Shai-Hulud, and keyv/cacheable compromise indicators
 5. **Reporting**: Provides detailed output on any vulnerabilities discovered
 
 Composer/Packagist indicators such as `intercom/intercom-php@5.0.2` are tracked as a follow-up area and are not scanned in the current implementation.
@@ -251,6 +258,13 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 2026年5月12日時点でSocketが追跡しているMini Shai-HuludのNPM 405 artifactsと、PyPI `lightning` 2.6.2/2.6.3も検出対象に含めています。
 
+2026年8月4日、Socketは`keyv`と`cacheable`のnpm名前空間から始まり、他のメンテナが所有するパッケージにも拡大した進行中の侵害を報告しました。このリポジトリのカタログは2026年8月5日に更新され、その時点のSocketのキャンペーンデータに掲載されていたnpm 444パッケージ、2,236 artifactsをすべて収録しています。
+
+- [Socketの技術分析](https://socket.dev/blog/popular-npm-packages-in-the-keyv-and-cacheable-namespaces-compromised-in-active-supply-chain)
+- [Socketのキャンペーントラッカーと影響パッケージ一覧](https://socket.dev/supply-chain-attacks/keyv-and-cacheable-compromise)
+
+Socketのキャンペーンデータには、Go 8モジュール、24 artifactsも掲載されていました。現在このツールはGoモジュールをスキャンしないため、これらはカタログに含めていません。
+
 この攻撃では以下のような高度な技術が使用されました：
 - メンテナパッケージ間での自己増殖型マルウェア
 - AWS、GCP、Azure、GitHubからの認証情報窃取
@@ -265,7 +279,7 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 - 🔍 **包括的スキャン**: GitHub Actionsワークフローファイル(.yml/.yaml)をスキャン
 - 🚨 **脆弱性検出**: アクション内の脆弱なNPM/PyPIパッケージを特定
-- 📦 **厳選されたパッケージリスト**: Shai-Hulud攻撃の330以上のパッケージとMini Shai-HuludのNPM/PyPI artifactsを含む
+- 📦 **厳選されたパッケージリスト**: Shai-Hulud、Mini Shai-Hulud、keyv/cacheable侵害のNPM/PyPI静的IoCを収録
 - 🐍 **Pythonロックファイル対応**: `requirements*.txt`、`Pipfile.lock`、`poetry.lock`、`uv.lock`をスキャン
 - 📂 **柔軟な入力**: 単一ファイルとディレクトリスキャンの両方をサポート
 - 💻 **ローカル依存ファイルスキャン**: `--local`でローカルの依存ファイルまたはディレクトリをスキャン
@@ -368,7 +382,7 @@ jobs:
 1. **YAML解析**: GitHub Actionsワークフローファイルを解析してアクション参照を抽出
 2. **リポジトリクローン**: go-gitを使用して各参照されたアクションリポジトリをダウンロード
 3. **パッケージ分析**: npmとPythonの依存関係ファイルを検索
-4. **脆弱性マッチング**: 発見されたパッケージをShai-Hulud/Mini Shai-Huludの静的IoCカタログと比較
+4. **脆弱性マッチング**: 発見されたパッケージをShai-Hulud、Mini Shai-Hulud、keyv/cacheable侵害の静的IoCカタログと比較
 5. **レポート**: 発見された脆弱性について詳細な出力を提供
 
 ## 開発

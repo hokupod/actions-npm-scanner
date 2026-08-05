@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"io/ioutil"
 	"os"
 	"path/filepath"
@@ -824,6 +825,45 @@ packages:
 		if !found {
 			t.Errorf("expected vulnerability for %s, got %v", expectedPackage, vulnerabilities)
 		}
+	}
+}
+
+func TestKeyvCacheableCompromiseNpmPackages(t *testing.T) {
+	tests := []struct {
+		name        string
+		packageName string
+		version     string
+	}{
+		{name: "adminide-stack", packageName: "@adminide-stack/clock-tik-browser", version: "12.0.24"},
+		{name: "onereach", packageName: "@onereach/authorizer-helper", version: "0.0.13"},
+		{name: "or-sdk", packageName: "@or-sdk/accounts", version: "2.3.7"},
+		{name: "servicetitan", packageName: "@servicetitan/acquisition-functions", version: "5.22.7"},
+		{name: "keyv", packageName: "keyv", version: "6.0.0"},
+		{name: "cacheable", packageName: "cacheable", version: "2.5.1"},
+		{name: "cacheable-scope", packageName: "@cacheable/node-cache", version: "3.1.2"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			tmpDir := t.TempDir()
+			packageJSON := fmt.Sprintf(`{"dependencies":{%q:%q}}`, tt.packageName, tt.version)
+			if err := os.WriteFile(filepath.Join(tmpDir, "package.json"), []byte(packageJSON), 0644); err != nil {
+				t.Fatal(err)
+			}
+
+			vulnerabilities, err := ScanAction(tmpDir, GetVulnerabilityCatalog())
+			if err != nil {
+				t.Fatalf("ScanAction() error = %v", err)
+			}
+			if len(vulnerabilities) != 1 {
+				t.Fatalf("expected 1 vulnerability for %s@%s, got %v", tt.packageName, tt.version, vulnerabilities)
+			}
+
+			want := fmt.Sprintf("%s with version %s", tt.packageName, tt.version)
+			if !strings.Contains(vulnerabilities[0], want) {
+				t.Errorf("expected vulnerability containing %q, got %q", want, vulnerabilities[0])
+			}
+		})
 	}
 }
 
