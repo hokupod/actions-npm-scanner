@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io/ioutil"
 	"os"
@@ -43,11 +44,50 @@ type PackageLockInfo struct {
 
 // PnpmLock represents the structure of pnpm-lock.yaml
 type PnpmLock struct {
-	LockfileVersion int                        `yaml:"lockfileVersion"`
-	Dependencies    map[string]string          `yaml:"dependencies,omitempty"`
-	DevDependencies map[string]string          `yaml:"devDependencies,omitempty"`
+	// LockfileVersion is written as a number (5.4) up to lockfile v5 and as a
+	// quoted string ('9.0') from v6 onwards, so it is kept as a raw node to
+	// avoid failing the whole file on a type mismatch.
+	LockfileVersion yaml.Node                  `yaml:"lockfileVersion"`
+	Dependencies    map[string]PnpmDependency  `yaml:"dependencies,omitempty"`
+	DevDependencies map[string]PnpmDependency  `yaml:"devDependencies,omitempty"`
+	Importers       map[string]PnpmImporter    `yaml:"importers,omitempty"` // v6+
 	Packages        map[string]PnpmPackageInfo `yaml:"packages,omitempty"`
+	Snapshots       map[string]PnpmPackageInfo `yaml:"snapshots,omitempty"` // v9+
 	Specifiers      map[string]string          `yaml:"specifiers,omitempty"`
+}
+
+// PnpmImporter represents a workspace entry under the v6+ importers section
+type PnpmImporter struct {
+	Dependencies         map[string]PnpmDependency `yaml:"dependencies,omitempty"`
+	DevDependencies      map[string]PnpmDependency `yaml:"devDependencies,omitempty"`
+	OptionalDependencies map[string]PnpmDependency `yaml:"optionalDependencies,omitempty"`
+}
+
+// PnpmDependency represents a dependency entry in pnpm-lock.yaml.
+// Lockfiles up to v5 store a bare version string, while v6+ importers store a
+// mapping with `specifier` and `version` keys.
+type PnpmDependency struct {
+	Specifier string
+	Version   string
+}
+
+// UnmarshalYAML accepts both the scalar and the mapping form of a dependency entry.
+func (dependency *PnpmDependency) UnmarshalYAML(value *yaml.Node) error {
+	if value.Kind == yaml.ScalarNode {
+		dependency.Version = value.Value
+		return nil
+	}
+
+	var mapped struct {
+		Specifier string `yaml:"specifier"`
+		Version   string `yaml:"version"`
+	}
+	if err := value.Decode(&mapped); err != nil {
+		return err
+	}
+	dependency.Specifier = mapped.Specifier
+	dependency.Version = mapped.Version
+	return nil
 }
 
 // PnpmPackageInfo represents package information in pnpm-lock.yaml
@@ -148,94 +188,103 @@ func formatVulnerabilityMessage(pkgName, version, filename string, vulnerablePac
 	return fmt.Sprintf("Found vulnerable package %s with version %s in %s", pkgName, version, filename)
 }
 
-// ScanAction scans a downloaded action for vulnerable packages.
-func ScanAction(actionDir string, catalog VulnerabilityCatalog) ([]string, error) {
-	return scanAction(actionDir, catalog, true)
+// actionScanResult holds the findings for a directory together with the files
+// that could not be scanned, so that one unreadable dependency file does not
+// discard the findings of the other files in the same directory.
+type actionScanResult struct {
+	Vulnerabilities []string
+	FileErrors      []string
 }
 
-func scanAction(actionDir string, catalog VulnerabilityCatalog, verbose bool) ([]string, error) {
-	var foundVulnerabilities []string
+func (result *actionScanResult) merge(vulnerabilities []string, fileErrors []string) {
+	result.Vulnerabilities = append(result.Vulnerabilities, vulnerabilities...)
+	result.FileErrors = append(result.FileErrors, fileErrors...)
+}
+
+// ScanAction scans a downloaded action for vulnerable packages.
+// Findings from the files that could be read are returned even when other
+// dependency files in the same directory failed to parse; the returned error
+// then describes those failures.
+func ScanAction(actionDir string, catalog VulnerabilityCatalog) ([]string, error) {
+	result := scanAction(actionDir, catalog, true)
+	if len(result.FileErrors) > 0 {
+		return result.Vulnerabilities, errors.New(strings.Join(result.FileErrors, "; "))
+	}
+	return result.Vulnerabilities, nil
+}
+
+func scanAction(actionDir string, catalog VulnerabilityCatalog, verbose bool) actionScanResult {
+	var result actionScanResult
 
 	// Build optimized vulnerability map once
 	vulnerablePackageMap := buildVulnerablePackageMap(catalog.NpmPackages)
 	pypiPackageMap := buildVulnerablePypiPackageMap(catalog.PypiPackages)
 
-	packageJSONPath := filepath.Join(actionDir, "package.json")
-	packageLockJSONPath := filepath.Join(actionDir, "package-lock.json")
-	yarnLockPath := filepath.Join(actionDir, "yarn.lock")
-	pnpmLockPath := filepath.Join(actionDir, "pnpm-lock.yaml")
+	npmScanners := []struct {
+		filename string
+		scan     func(string, VulnerablePackageMap) ([]string, error)
+	}{
+		{"package.json", scanPackageJSONOptimized},
+		{"package-lock.json", scanPackageLockJSONOptimized},
+		{"yarn.lock", scanYarnLockOptimized},
+		{"pnpm-lock.yaml", scanPnpmLockOptimized},
+	}
 
-	// Scan package.json
-	if _, err := os.Stat(packageJSONPath); err == nil {
-		if verbose {
-			fmt.Println("    🔍 Scanning package.json...")
+	for _, npmScanner := range npmScanners {
+		path := filepath.Join(actionDir, npmScanner.filename)
+		if err := statDependencyFile(path); err != nil {
+			if errors.Is(err, errDependencyFileAbsent) {
+				if verbose {
+					fmt.Printf("       %s not found. Skipping.\n", npmScanner.filename)
+				}
+			} else {
+				result.FileErrors = append(result.FileErrors, err.Error())
+				if verbose {
+					fmt.Fprintf(os.Stderr, "    Error scanning %s: %v\n", npmScanner.filename, err)
+				}
+			}
+			continue
 		}
-		vulnerabilities, err := scanPackageJSONOptimized(packageJSONPath, vulnerablePackageMap)
+
+		if verbose {
+			fmt.Printf("    🔍 Scanning %s...\n", npmScanner.filename)
+		}
+		vulnerabilities, err := npmScanner.scan(path, vulnerablePackageMap)
 		if err != nil {
-			return nil, err
+			result.FileErrors = append(result.FileErrors, err.Error())
+			if verbose {
+				fmt.Fprintf(os.Stderr, "    Error scanning %s: %v\n", npmScanner.filename, err)
+			}
+			continue
 		}
-		foundVulnerabilities = append(foundVulnerabilities, vulnerabilities...)
-	} else {
-		if verbose {
-			fmt.Println("       package.json not found. Skipping.")
-		}
+		result.Vulnerabilities = append(result.Vulnerabilities, vulnerabilities...)
 	}
 
-	// Scan package-lock.json
-	if _, err := os.Stat(packageLockJSONPath); err == nil {
-		if verbose {
-			fmt.Println("    🔍 Scanning package-lock.json...")
-		}
-		vulnerabilities, err := scanPackageLockJSONOptimized(packageLockJSONPath, vulnerablePackageMap)
-		if err != nil {
-			return nil, err
-		}
-		foundVulnerabilities = append(foundVulnerabilities, vulnerabilities...)
-	} else {
-		if verbose {
-			fmt.Println("       package-lock.json not found. Skipping.")
-		}
-	}
+	pythonResult := scanPythonDependencyFiles(actionDir, pypiPackageMap, verbose)
+	result.merge(pythonResult.Vulnerabilities, pythonResult.FileErrors)
 
-	// Scan yarn.lock
-	if _, err := os.Stat(yarnLockPath); err == nil {
-		if verbose {
-			fmt.Println("    🔍 Scanning yarn.lock...")
-		}
-		vulnerabilities, err := scanYarnLockOptimized(yarnLockPath, vulnerablePackageMap)
-		if err != nil {
-			return nil, err
-		}
-		foundVulnerabilities = append(foundVulnerabilities, vulnerabilities...)
-	} else {
-		if verbose {
-			fmt.Println("       yarn.lock not found. Skipping.")
-		}
-	}
+	return result
+}
 
-	// Scan pnpm-lock.yaml
-	if _, err := os.Stat(pnpmLockPath); err == nil {
-		if verbose {
-			fmt.Println("    🔍 Scanning pnpm-lock.yaml...")
-		}
-		vulnerabilities, err := scanPnpmLockOptimized(pnpmLockPath, vulnerablePackageMap)
-		if err != nil {
-			return nil, err
-		}
-		foundVulnerabilities = append(foundVulnerabilities, vulnerabilities...)
-	} else {
-		if verbose {
-			fmt.Println("       pnpm-lock.yaml not found. Skipping.")
-		}
-	}
+// errDependencyFileAbsent means no directory entry exists at the path, so the
+// file can be skipped as genuinely missing.
+var errDependencyFileAbsent = errors.New("dependency file absent")
 
-	vulnerabilities, err := scanPythonDependencyFiles(actionDir, pypiPackageMap, verbose)
-	if err != nil {
-		return nil, err
+// statDependencyFile distinguishes a missing dependency file from one whose
+// entry exists but cannot be resolved. A broken symlink makes os.Stat return
+// ENOENT even though the entry is there, and skipping it as "not found" would
+// hide the failure from the summary, so os.Lstat checks the entry itself.
+func statDependencyFile(path string) error {
+	if _, err := os.Stat(path); err != nil {
+		if _, lstatErr := os.Lstat(path); lstatErr != nil {
+			if errors.Is(lstatErr, os.ErrNotExist) {
+				return errDependencyFileAbsent
+			}
+			return fmt.Errorf("failed to lstat %s: %w", path, lstatErr)
+		}
+		return fmt.Errorf("failed to stat %s: %w", path, err)
 	}
-	foundVulnerabilities = append(foundVulnerabilities, vulnerabilities...)
-
-	return foundVulnerabilities, nil
+	return nil
 }
 
 func scanDependencyFile(path string, vulnerablePackageMap, pypiPackageMap VulnerablePackageMap) ([]string, error) {
@@ -312,12 +361,19 @@ func scanPackageJSONOptimized(path string, vulnerablePackageMap VulnerablePackag
 	return foundVulnerabilities, nil
 }
 
-func scanPythonDependencyFiles(actionDir string, vulnerablePackageMap VulnerablePackageMap, verbose bool) ([]string, error) {
-	var foundVulnerabilities []string
+func scanPythonDependencyFiles(actionDir string, vulnerablePackageMap VulnerablePackageMap, verbose bool) actionScanResult {
+	var result actionScanResult
+
+	recordError := func(filename string, err error) {
+		result.FileErrors = append(result.FileErrors, err.Error())
+		if verbose {
+			fmt.Fprintf(os.Stderr, "    Error scanning %s: %v\n", filename, err)
+		}
+	}
 
 	requirementsPaths, err := filepath.Glob(filepath.Join(actionDir, "requirements*.txt"))
 	if err != nil {
-		return nil, err
+		recordError("requirements*.txt", err)
 	}
 	if len(requirementsPaths) == 0 && verbose {
 		fmt.Println("       requirements*.txt not found. Skipping.")
@@ -328,9 +384,10 @@ func scanPythonDependencyFiles(actionDir string, vulnerablePackageMap Vulnerable
 		}
 		vulnerabilities, err := scanRequirementsTxt(path, vulnerablePackageMap)
 		if err != nil {
-			return nil, err
+			recordError(filepath.Base(path), err)
+			continue
 		}
-		foundVulnerabilities = append(foundVulnerabilities, vulnerabilities...)
+		result.Vulnerabilities = append(result.Vulnerabilities, vulnerabilities...)
 	}
 
 	lockScanners := []struct {
@@ -344,21 +401,29 @@ func scanPythonDependencyFiles(actionDir string, vulnerablePackageMap Vulnerable
 
 	for _, lockScanner := range lockScanners {
 		path := filepath.Join(actionDir, lockScanner.filename)
-		if _, err := os.Stat(path); err == nil {
-			if verbose {
-				fmt.Printf("    🔍 Scanning %s...\n", lockScanner.filename)
+		if err := statDependencyFile(path); err != nil {
+			if errors.Is(err, errDependencyFileAbsent) {
+				if verbose {
+					fmt.Printf("       %s not found. Skipping.\n", lockScanner.filename)
+				}
+			} else {
+				recordError(lockScanner.filename, err)
 			}
-			vulnerabilities, err := lockScanner.scan(path, vulnerablePackageMap)
-			if err != nil {
-				return nil, err
-			}
-			foundVulnerabilities = append(foundVulnerabilities, vulnerabilities...)
-		} else if verbose {
-			fmt.Printf("       %s not found. Skipping.\n", lockScanner.filename)
+			continue
 		}
+
+		if verbose {
+			fmt.Printf("    🔍 Scanning %s...\n", lockScanner.filename)
+		}
+		vulnerabilities, err := lockScanner.scan(path, vulnerablePackageMap)
+		if err != nil {
+			recordError(lockScanner.filename, err)
+			continue
+		}
+		result.Vulnerabilities = append(result.Vulnerabilities, vulnerabilities...)
 	}
 
-	return foundVulnerabilities, nil
+	return result
 }
 
 func scanRequirementsTxt(path string, vulnerablePackageMap VulnerablePackageMap) ([]string, error) {
@@ -953,55 +1018,15 @@ func extractPackageNameFromYarnSpec(spec string) string {
 }
 
 func scanPnpmLockOptimized(path string, vulnerablePackageMap VulnerablePackageMap) ([]string, error) {
-	var foundVulnerabilities []string
-	data, err := ioutil.ReadFile(path)
+	entries, err := readPnpmLockEntries(path)
 	if err != nil {
-		return nil, fmt.Errorf("failed to read %s: %w", path, err)
+		return nil, err
 	}
 
-	var pnpmLock PnpmLock
-	if err := yaml.Unmarshal(data, &pnpmLock); err != nil {
-		return nil, fmt.Errorf("failed to unmarshal %s: %w", path, err)
-	}
-
-	// Process packages field
-	if len(pnpmLock.Packages) > 0 {
-		for pkgPath := range pnpmLock.Packages {
-			// Skip empty paths and root path
-			if pkgPath == "" || pkgPath == "/" {
-				continue
-			}
-
-			// Extract package name and version from path
-			pkgName, version := extractPackageNameAndVersionFromPnpmPath(pkgPath)
-			if pkgName == "" || version == "" {
-				continue
-			}
-
-			// Check against vulnerable packages
-			if isVuln, vulnerablePackage := vulnerablePackageMap.isVulnerable(pkgName, version); isVuln {
-				foundVulnerabilities = append(foundVulnerabilities, formatVulnerabilityMessage(pkgName, version, filepath.Base(path), vulnerablePackage))
-			}
-		}
-	}
-
-	// Process dependencies and devDependencies fields (for older pnpm lockfile versions)
-	dependencyTypes := []struct {
-		deps map[string]string
-		name string
-	}{
-		{pnpmLock.Dependencies, "dependencies"},
-		{pnpmLock.DevDependencies, "devDependencies"},
-	}
-
-	for _, depType := range dependencyTypes {
-		if depType.deps == nil {
-			continue
-		}
-		for pkgName, version := range depType.deps {
-			if isVuln, vulnerablePackage := vulnerablePackageMap.isVulnerable(pkgName, version); isVuln {
-				foundVulnerabilities = append(foundVulnerabilities, formatVulnerabilityMessage(pkgName, version, filepath.Base(path), vulnerablePackage))
-			}
+	var foundVulnerabilities []string
+	for _, entry := range entries {
+		if isVuln, vulnerablePackage := vulnerablePackageMap.isVulnerable(entry.name, entry.version); isVuln {
+			foundVulnerabilities = append(foundVulnerabilities, formatVulnerabilityMessage(entry.name, entry.version, filepath.Base(path), vulnerablePackage))
 		}
 	}
 
@@ -1009,7 +1034,30 @@ func scanPnpmLockOptimized(path string, vulnerablePackageMap VulnerablePackageMa
 }
 
 func scanPnpmLock(path string, vulnerablePackages []VulnerablePackage) ([]string, error) {
+	entries, err := readPnpmLockEntries(path)
+	if err != nil {
+		return nil, err
+	}
+
 	var foundVulnerabilities []string
+	for _, entry := range entries {
+		for _, vulnerablePackage := range vulnerablePackages {
+			if entry.name == vulnerablePackage.Name && isVersionVulnerable(entry.version, vulnerablePackage.Versions) {
+				foundVulnerabilities = append(foundVulnerabilities, formatVulnerabilityMessage(vulnerablePackage.Name, entry.version, filepath.Base(path), vulnerablePackage))
+			}
+		}
+	}
+
+	return foundVulnerabilities, nil
+}
+
+// pnpmPackageEntry is a package name/version pair resolved from a pnpm lockfile
+type pnpmPackageEntry struct {
+	name    string
+	version string
+}
+
+func readPnpmLockEntries(path string) ([]pnpmPackageEntry, error) {
 	data, err := ioutil.ReadFile(path)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read %s: %w", path, err)
@@ -1020,88 +1068,115 @@ func scanPnpmLock(path string, vulnerablePackages []VulnerablePackage) ([]string
 		return nil, fmt.Errorf("failed to unmarshal %s: %w", path, err)
 	}
 
-	// Process packages field
-	if len(pnpmLock.Packages) > 0 {
-		for pkgPath := range pnpmLock.Packages {
-			// Skip empty paths and root path
-			if pkgPath == "" || pkgPath == "/" {
-				continue
-			}
-
-			// Extract package name and version from path
-			pkgName, version := extractPackageNameAndVersionFromPnpmPath(pkgPath)
-			if pkgName == "" || version == "" {
-				continue
-			}
-
-			// Check against vulnerable packages
-			for _, vulnerablePackage := range vulnerablePackages {
-				if pkgName == vulnerablePackage.Name {
-					if isVersionVulnerable(version, vulnerablePackage.Versions) {
-						foundVulnerabilities = append(foundVulnerabilities, formatVulnerabilityMessage(vulnerablePackage.Name, version, filepath.Base(path), vulnerablePackage))
-					}
-				}
-			}
-		}
-	}
-
-	// Process dependencies and devDependencies fields (for older pnpm lockfile versions)
-	dependencyTypes := []struct {
-		deps map[string]string
-		name string
-	}{
-		{pnpmLock.Dependencies, "dependencies"},
-		{pnpmLock.DevDependencies, "devDependencies"},
-	}
-
-	for _, depType := range dependencyTypes {
-		if depType.deps == nil {
-			continue
-		}
-		for pkgName, version := range depType.deps {
-			for _, vulnerablePackage := range vulnerablePackages {
-				if pkgName == vulnerablePackage.Name {
-					if isVersionVulnerable(version, vulnerablePackage.Versions) {
-						foundVulnerabilities = append(foundVulnerabilities, formatVulnerabilityMessage(vulnerablePackage.Name, version, filepath.Base(path), vulnerablePackage))
-					}
-				}
-			}
-		}
-	}
-
-	return foundVulnerabilities, nil
+	return collectPnpmPackageEntries(pnpmLock), nil
 }
 
-// extractPackageNameAndVersionFromPnpmPath extracts package name and version from pnpm lockfile package path
+// collectPnpmPackageEntries gathers every package name/version pair a pnpm
+// lockfile refers to, covering lockfile v5 (path-style keys and top-level
+// dependencies) through v9 (name@version keys, importers and snapshots).
+// Duplicates across sections are reported only once.
+func collectPnpmPackageEntries(pnpmLock PnpmLock) []pnpmPackageEntry {
+	var entries []pnpmPackageEntry
+	seen := make(map[pnpmPackageEntry]bool)
+
+	add := func(name, version string) {
+		if name == "" || version == "" {
+			return
+		}
+		entry := pnpmPackageEntry{name: name, version: version}
+		if seen[entry] {
+			return
+		}
+		seen[entry] = true
+		entries = append(entries, entry)
+	}
+
+	for _, section := range []map[string]PnpmPackageInfo{pnpmLock.Packages, pnpmLock.Snapshots} {
+		for pkgPath := range section {
+			add(extractPackageNameAndVersionFromPnpmPath(pkgPath))
+		}
+	}
+
+	addDependencies := func(dependencies map[string]PnpmDependency) {
+		for pkgName, dependency := range dependencies {
+			add(pkgName, cleanPnpmVersion(dependency.Version))
+		}
+	}
+
+	addDependencies(pnpmLock.Dependencies)
+	addDependencies(pnpmLock.DevDependencies)
+	for _, importer := range pnpmLock.Importers {
+		addDependencies(importer.Dependencies)
+		addDependencies(importer.DevDependencies)
+		addDependencies(importer.OptionalDependencies)
+	}
+
+	return entries
+}
+
+// extractPackageNameAndVersionFromPnpmPath extracts package name and version from a pnpm lockfile package key
 // Examples:
 //
-//	"/@ctrl/tinycolor/4.1.1" -> "@ctrl/tinycolor", "4.1.1"
-//	"/lodash/4.17.21" -> "lodash", "4.17.21"
+//	"/@ctrl/tinycolor/4.1.1"        (lockfile v5) -> "@ctrl/tinycolor", "4.1.1"
+//	"/@ctrl/tinycolor@4.1.1"        (v6 - v8)     -> "@ctrl/tinycolor", "4.1.1"
+//	"@ctrl/tinycolor@4.1.1"         (v9)          -> "@ctrl/tinycolor", "4.1.1"
+//	"/vue-loader@17.0.0(vue@3.0.0)"               -> "vue-loader", "17.0.0"
+//	"/@scope/7zip-bin@5.2.0"                      -> "@scope/7zip-bin", "5.2.0"
 func extractPackageNameAndVersionFromPnpmPath(pkgPath string) (string, string) {
-	// Remove leading slash
 	pkgPath = strings.TrimPrefix(pkgPath, "/")
-
-	// Split path into components
-	components := strings.Split(pkgPath, "/")
-	if len(components) < 2 {
+	if pkgPath == "" {
 		return "", ""
 	}
 
-	// Handle scoped packages (@org/package)
-	if strings.HasPrefix(pkgPath, "@") {
-		if len(components) < 3 {
-			return "", ""
-		}
-		// For scoped packages, the name is @org/package and version is the last component
-		pkgName := components[0] + "/" + components[1]
-		version := components[2]
-		return pkgName, version
-	} else {
-		// For regular packages, the name is the first component and version is the second
-		pkgName := components[0]
-		version := components[1]
-		return pkgName, version
+	// Drop the peer dependency suffix first so the "@" inside it (for example
+	// "(vue@3.0.0)") is not mistaken for the name/version separator.
+	if index := strings.IndexByte(pkgPath, '('); index >= 0 {
+		pkgPath = pkgPath[:index]
 	}
+
+	// Lockfile v5 and earlier separate name and version with "/".
+	if index := strings.LastIndexByte(pkgPath, '/'); index > 0 {
+		if version := cleanPnpmVersion(pkgPath[index+1:]); version != "" {
+			return pkgPath[:index], version
+		}
+	}
+
+	// Lockfile v6 and later use "name@version". A package name carries an "@"
+	// only as the first character of its scope, so the next "@" is the
+	// separator; searching from the end would split a key that still has an
+	// underscore peer suffix ("17.0.0_vue@2.6.14") at the peer dependency.
+	if index := strings.IndexByte(pkgPath[1:], '@'); index >= 0 {
+		index++
+		if version := cleanPnpmVersion(pkgPath[index+1:]); version != "" {
+			return pkgPath[:index], version
+		}
+	}
+
+	return "", ""
+}
+
+// cleanPnpmVersion strips the peer dependency suffix pnpm appends to resolved
+// versions ("4.1.1(vue@3.0.0)" in v6+, "15.9.8_vue@2.6.14" in v5) and rejects
+// non-registry references such as "link:../shared" or "npm:other@1.0.0".
+func cleanPnpmVersion(version string) string {
+	if index := strings.IndexByte(version, '('); index >= 0 {
+		version = version[:index]
+	}
+	if index := strings.IndexByte(version, '_'); index >= 0 {
+		version = version[:index]
+	}
+
+	version = strings.TrimSpace(version)
+	if version == "" || version[0] < '0' || version[0] > '9' {
+		return ""
+	}
+	// A resolved version never contains "@" or "/". Rejecting them keeps the
+	// "/" split from claiming a v6+ key whose package name starts with a digit
+	// ("@scope/7zip-bin@5.2.0"), so the "name@version" split gets to handle it.
+	if strings.ContainsAny(version, "@/") {
+		return ""
+	}
+	return version
 }
 
 func scanPackageLockJSONOptimized(path string, vulnerablePackageMap VulnerablePackageMap) ([]string, error) {

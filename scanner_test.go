@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"io/ioutil"
 	"os"
@@ -8,6 +9,68 @@ import (
 	"strings"
 	"testing"
 )
+
+func TestStatDependencyFile(t *testing.T) {
+	tmpDir := t.TempDir()
+	regularFile := filepath.Join(tmpDir, "package.json")
+	if err := os.WriteFile(regularFile, []byte("{}"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	brokenSymlink := filepath.Join(tmpDir, "broken-link")
+	if err := os.Symlink(filepath.Join(tmpDir, "missing-target"), brokenSymlink); err != nil {
+		t.Fatal(err)
+	}
+	_, brokenSymlinkError := os.Stat(brokenSymlink)
+	if brokenSymlinkError == nil {
+		t.Fatal("test fixture did not produce a broken symlink Stat error")
+	}
+	brokenSymlinkCause := errors.Unwrap(brokenSymlinkError)
+
+	nonNotExistPath := filepath.Join(tmpDir, "invalid\x00path")
+	_, nonNotExistError := os.Lstat(nonNotExistPath)
+	if nonNotExistError == nil || errors.Is(nonNotExistError, os.ErrNotExist) {
+		t.Fatalf("test fixture did not produce a non-not-exist Lstat error: %v", nonNotExistError)
+	}
+	nonNotExistCause := errors.Unwrap(nonNotExistError)
+
+	tests := []struct {
+		name       string
+		path       string
+		wantErr    bool
+		wantAbsent bool
+		wantCause  error
+	}{
+		{name: "regular file", path: regularFile},
+		{name: "absent entry", path: filepath.Join(tmpDir, "missing"), wantErr: true, wantAbsent: true},
+		{name: "broken symlink", path: brokenSymlink, wantErr: true, wantCause: brokenSymlinkCause},
+		{name: "non-not-exist Lstat error", path: nonNotExistPath, wantErr: true, wantCause: nonNotExistCause},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := statDependencyFile(tt.path)
+			if !tt.wantErr {
+				if err != nil {
+					t.Fatalf("statDependencyFile() error = %v", err)
+				}
+				return
+			}
+			if err == nil {
+				t.Fatal("statDependencyFile() error = nil")
+			}
+			if got := errors.Is(err, errDependencyFileAbsent); got != tt.wantAbsent {
+				t.Fatalf("errors.Is(err, errDependencyFileAbsent) = %v, want %v; err = %v", got, tt.wantAbsent, err)
+			}
+			if tt.wantCause != nil && !errors.Is(err, tt.wantCause) {
+				t.Fatalf("statDependencyFile() error = %v, want wrapped cause %v", err, tt.wantCause)
+			}
+			if !strings.Contains(err.Error(), tt.path) && !tt.wantAbsent {
+				t.Fatalf("statDependencyFile() error = %v, want path %q", err, tt.path)
+			}
+		})
+	}
+}
 
 func testNpmCatalog(vulnerablePackages []VulnerablePackage) VulnerabilityCatalog {
 	return VulnerabilityCatalog{NpmPackages: vulnerablePackages}
@@ -103,6 +166,136 @@ packages:
 	if len(vulnerabilities) != 1 {
 		t.Errorf("expected 1 vulnerability, got %d", len(vulnerabilities))
 	}
+}
+
+// pnpm writes lockfileVersion as a quoted string from v6 onwards and keys
+// packages as "name@version" instead of "/name/version".
+func TestScanActionWithPnpmLockV9(t *testing.T) {
+	tmpDir, err := ioutil.TempDir("", "action-")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	packageJSON := `{
+	  "dependencies": {
+	    "lodash": "4.17.19"
+	  }
+	}`
+
+	if err := ioutil.WriteFile(filepath.Join(tmpDir, "package.json"), []byte(packageJSON), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	pnpmLock := `lockfileVersion: '9.0'
+
+settings:
+  autoInstallPeers: true
+  excludeLinksFromLockfile: false
+
+importers:
+
+  .:
+    dependencies:
+      '@ctrl/tinycolor':
+        specifier: ^4.1.1
+        version: 4.1.1
+      lodash:
+        specifier: 4.17.19
+        version: 4.17.19
+
+packages:
+
+  '@ctrl/tinycolor@4.1.1':
+    resolution: {integrity: sha512-...}
+    engines: {node: '>=14'}
+
+  lodash@4.17.19:
+    resolution: {integrity: sha512-...}
+
+snapshots:
+
+  '@ctrl/tinycolor@4.1.1': {}
+
+  lodash@4.17.19: {}
+`
+
+	if err := ioutil.WriteFile(filepath.Join(tmpDir, "pnpm-lock.yaml"), []byte(pnpmLock), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	vulnerablePackages := []VulnerablePackage{
+		{Name: "@ctrl/tinycolor", Versions: []string{"4.1.1"}},
+		{Name: "lodash", Versions: []string{"4.17.19"}},
+	}
+
+	vulnerabilities, err := ScanAction(tmpDir, testNpmCatalog(vulnerablePackages))
+	if err != nil {
+		t.Fatalf("ScanAction() error = %v", err)
+	}
+
+	// package.json reports lodash, and pnpm-lock.yaml reports both packages once
+	// each even though they appear in importers, packages and snapshots.
+	assertVulnerabilityReported(t, vulnerabilities, "lodash", "4.17.19", "package.json (dependencies)")
+	assertVulnerabilityReported(t, vulnerabilities, "@ctrl/tinycolor", "4.1.1", "pnpm-lock.yaml")
+	assertVulnerabilityReported(t, vulnerabilities, "lodash", "4.17.19", "pnpm-lock.yaml")
+
+	if len(vulnerabilities) != 3 {
+		t.Errorf("expected 3 vulnerabilities, got %d: %v", len(vulnerabilities), vulnerabilities)
+	}
+}
+
+// A dependency file that cannot be parsed must not discard the findings of the
+// other dependency files in the same directory.
+func TestScanActionKeepsFindingsWhenDependencyFileFails(t *testing.T) {
+	tmpDir, err := ioutil.TempDir("", "action-")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	packageJSON := `{
+	  "dependencies": {
+	    "@ctrl/tinycolor": "4.1.1"
+	  }
+	}`
+
+	if err := ioutil.WriteFile(filepath.Join(tmpDir, "package.json"), []byte(packageJSON), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := ioutil.WriteFile(filepath.Join(tmpDir, "pnpm-lock.yaml"), []byte("packages: [\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	vulnerablePackages := []VulnerablePackage{
+		{Name: "@ctrl/tinycolor", Versions: []string{"4.1.1"}},
+	}
+
+	result := scanAction(tmpDir, testNpmCatalog(vulnerablePackages), false)
+
+	assertVulnerabilityReported(t, result.Vulnerabilities, "@ctrl/tinycolor", "4.1.1", "package.json (dependencies)")
+	if len(result.FileErrors) != 1 {
+		t.Errorf("expected 1 file error, got %d: %v", len(result.FileErrors), result.FileErrors)
+	}
+
+	// ScanAction surfaces the failure as an error while still returning the findings.
+	vulnerabilities, err := ScanAction(tmpDir, testNpmCatalog(vulnerablePackages))
+	if err == nil {
+		t.Error("expected ScanAction() to report the unparsable pnpm-lock.yaml")
+	}
+	assertVulnerabilityReported(t, vulnerabilities, "@ctrl/tinycolor", "4.1.1", "package.json (dependencies)")
+}
+
+func assertVulnerabilityReported(t *testing.T, vulnerabilities []string, pkgName, version, filename string) {
+	t.Helper()
+	expected := fmt.Sprintf("Found vulnerable package %s with version %s in %s", pkgName, version, filename)
+	for _, vulnerability := range vulnerabilities {
+		if vulnerability == expected {
+			return
+		}
+	}
+	t.Errorf("expected %q to be reported, got %v", expected, vulnerabilities)
 }
 
 func TestScanActionWithPackageLockJSON(t *testing.T) {
@@ -725,11 +918,34 @@ func TestExtractPackageNameAndVersionFromPnpmPath(t *testing.T) {
 		expected string
 		version  string
 	}{
+		// lockfile v5 and earlier
 		{"/@ctrl/tinycolor/4.1.1", "@ctrl/tinycolor", "4.1.1"},
 		{"/lodash/4.17.20", "lodash", "4.17.20"},
 		{"/@babel/core/7.12.3", "@babel/core", "7.12.3"},
 		{"/react-dom/17.0.2", "react-dom", "17.0.2"},
 		{"/@types/node/14.14.31", "@types/node", "14.14.31"},
+		{"/vue-loader/15.9.8_vue@2.6.14", "vue-loader", "15.9.8"},
+		// lockfile v6 - v8
+		{"/@ctrl/tinycolor@4.1.1", "@ctrl/tinycolor", "4.1.1"},
+		{"/lodash@4.17.20", "lodash", "4.17.20"},
+		{"/vue-loader@17.0.0(vue@3.0.0)", "vue-loader", "17.0.0"},
+		// a scoped name starting with a digit must not be split at the scope
+		{"/@scope/7zip-bin@5.2.0", "@scope/7zip-bin", "5.2.0"},
+		// an underscore peer suffix must not be mistaken for the separator
+		{"/vue-loader@17.0.0_vue@2.6.14", "vue-loader", "17.0.0"},
+		// an underscore inside a package name must survive
+		{"/string_decoder@1.3.0", "string_decoder", "1.3.0"},
+		// lockfile v9
+		{"@ctrl/tinycolor@4.1.1", "@ctrl/tinycolor", "4.1.1"},
+		{"@babel/core@7.12.3", "@babel/core", "7.12.3"},
+		{"lodash@4.17.20", "lodash", "4.17.20"},
+		{"vue-loader@17.0.0(vue@3.0.0)", "vue-loader", "17.0.0"},
+		{"@scope/7zip-bin@5.2.0", "@scope/7zip-bin", "5.2.0"},
+		// keys without a resolvable version
+		{"", "", ""},
+		{"/", "", ""},
+		{"@ctrl/tinycolor", "", ""},
+		{"lodash", "", ""},
 	}
 
 	for _, test := range tests {

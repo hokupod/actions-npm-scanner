@@ -19,10 +19,11 @@ func main() {
 	localMode := flag.Bool("local", false, "scan a local dependency file or directory")
 	verboseShort := flag.Bool("v", false, "show detailed scan output")
 	verboseLong := flag.Bool("verbose", false, "show detailed scan output")
+	failOnError := flag.Bool("fail-on-error", false, "exit with code 2 when the scan reported any error")
 	flag.Parse()
 
 	if flag.NArg() != 1 {
-		fmt.Printf("Usage: %s [--local] [-v|--verbose] <path>\n", filepath.Base(os.Args[0]))
+		fmt.Printf("Usage: %s [--local] [-v|--verbose] [--fail-on-error] <path>\n", filepath.Base(os.Args[0]))
 		os.Exit(1)
 	}
 
@@ -38,10 +39,21 @@ func main() {
 		summary, err = runWorkflowScan(path, vulnerabilityCatalog, verbose)
 	}
 	if err != nil {
-		fmt.Println("Error:", err)
+		fmt.Fprintln(os.Stderr, "Error:", err)
+		if *failOnError {
+			os.Exit(2)
+		}
 		os.Exit(1)
 	}
 	printScanSummary(summary)
+	// Any error means the scan was incomplete, so the flag keys off the error
+	// count rather than Files failed. An action that could not be downloaded
+	// leaves Files failed at zero yet was never scanned at all. The error check
+	// runs before the vulnerability check: an incomplete scan may hide further
+	// findings, so exit 2 takes precedence over exit 1 when the flag is set.
+	if *failOnError && summary.HasErrors() {
+		os.Exit(2)
+	}
 	if summary.HasVulnerabilities() {
 		os.Exit(1)
 	}
@@ -50,12 +62,17 @@ func main() {
 type ScanSummary struct {
 	WorkflowsScanned int
 	ActionsScanned   int
+	FilesFailed      int
 	Vulnerabilities  []ScanFinding
 	Errors           []string
 }
 
 func (summary ScanSummary) HasVulnerabilities() bool {
 	return len(summary.Vulnerabilities) > 0
+}
+
+func (summary ScanSummary) HasErrors() bool {
+	return len(summary.Errors) > 0
 }
 
 type ScanFinding struct {
@@ -81,8 +98,9 @@ func runWorkflowScan(path string, vulnerabilityCatalog VulnerabilityCatalog, ver
 		if err != nil {
 			message := fmt.Sprintf("Error parsing workflow %s: %v", file, err)
 			summary.Errors = append(summary.Errors, message)
+			summary.FilesFailed++
 			if verbose {
-				fmt.Println("Error parsing workflow:", err)
+				fmt.Fprintln(os.Stderr, "Error parsing workflow:", err)
 			}
 			continue
 		}
@@ -100,6 +118,7 @@ func runWorkflowScan(path string, vulnerabilityCatalog VulnerabilityCatalog, ver
 
 			result := scanWorkflowAction(action, vulnerabilityCatalog, verbose)
 			summary.Errors = append(summary.Errors, result.Errors...)
+			summary.FilesFailed += result.FilesFailed
 			for _, vulnerability := range result.Vulnerabilities {
 				summary.Vulnerabilities = append(summary.Vulnerabilities, ScanFinding{
 					Workflow: file,
@@ -124,6 +143,7 @@ func actionScanKey(action Action) string {
 type workflowActionScanResult struct {
 	Vulnerabilities []string
 	Errors          []string
+	FilesFailed     int
 	Completed       bool
 }
 
@@ -159,21 +179,24 @@ func scanWorkflowAction(action Action, vulnerabilityCatalog VulnerabilityCatalog
 	if verbose {
 		fmt.Printf("  🔍 Scanning action %s...\n", actionKey)
 	}
-	vulnerabilities, err := scanAction(tmpDir, vulnerabilityCatalog, verbose)
-	if err != nil {
-		message := fmt.Sprintf("Error scanning action %s: %v", actionKey, err)
-		if verbose {
-			fmt.Println("Error scanning action:", err)
-		}
-		return workflowActionScanResult{Errors: []string{message}}
-	}
+	scanResult := scanAction(tmpDir, vulnerabilityCatalog, verbose)
 
 	if verbose {
-		printVulnerabilityResult("    ", vulnerabilities)
+		printVulnerabilityResult("    ", scanResult.Vulnerabilities)
 		fmt.Printf("  Scan finished for action %s.\n", actionKey)
 	}
 
-	return workflowActionScanResult{Vulnerabilities: vulnerabilities, Completed: true}
+	messages := make([]string, 0, len(scanResult.FileErrors))
+	for _, fileError := range scanResult.FileErrors {
+		messages = append(messages, fmt.Sprintf("Error scanning action %s: %s", actionKey, fileError))
+	}
+
+	return workflowActionScanResult{
+		Vulnerabilities: scanResult.Vulnerabilities,
+		Errors:          messages,
+		FilesFailed:     len(scanResult.FileErrors),
+		Completed:       true,
+	}
 }
 
 func runLocalScan(path string, vulnerabilityCatalog VulnerabilityCatalog, verbose bool) (ScanSummary, error) {
@@ -188,7 +211,10 @@ func runLocalScan(path string, vulnerabilityCatalog VulnerabilityCatalog, verbos
 		if verbose {
 			fmt.Println("Scanning local path:", path)
 		}
-		vulnerabilities, err = scanAction(path, vulnerabilityCatalog, verbose)
+		scanResult := scanAction(path, vulnerabilityCatalog, verbose)
+		vulnerabilities = scanResult.Vulnerabilities
+		summary.Errors = append(summary.Errors, scanResult.FileErrors...)
+		summary.FilesFailed = len(scanResult.FileErrors)
 	} else {
 		if verbose {
 			fmt.Printf("🔍 Scanning local file: %s...\n", path)
@@ -196,9 +222,9 @@ func runLocalScan(path string, vulnerabilityCatalog VulnerabilityCatalog, verbos
 		vulnerablePackageMap := buildVulnerablePackageMap(vulnerabilityCatalog.NpmPackages)
 		pypiPackageMap := buildVulnerablePypiPackageMap(vulnerabilityCatalog.PypiPackages)
 		vulnerabilities, err = scanDependencyFile(path, vulnerablePackageMap, pypiPackageMap)
-	}
-	if err != nil {
-		return ScanSummary{}, err
+		if err != nil {
+			return ScanSummary{}, err
+		}
 	}
 
 	if verbose {
@@ -233,6 +259,7 @@ func printScanSummary(summary ScanSummary) {
 	fmt.Printf("Workflows scanned: %d\n", summary.WorkflowsScanned)
 	fmt.Printf("Actions scanned: %d\n", summary.ActionsScanned)
 	fmt.Printf("Vulnerabilities found: %d\n", len(summary.Vulnerabilities))
+	fmt.Printf("Files failed: %d\n", summary.FilesFailed)
 	fmt.Printf("Errors: %d\n", len(summary.Errors))
 
 	if len(summary.Vulnerabilities) > 0 {
@@ -242,10 +269,12 @@ func printScanSummary(summary ScanSummary) {
 		}
 	}
 
+	// Errors go to stderr so that a pipeline grepping stdout cannot mistake a
+	// partial scan for a clean one.
 	if len(summary.Errors) > 0 {
-		fmt.Println("Error details:")
+		fmt.Fprintln(os.Stderr, "Error details:")
 		for _, scanError := range summary.Errors {
-			fmt.Printf("  - %s\n", scanError)
+			fmt.Fprintf(os.Stderr, "  - %s\n", scanError)
 		}
 	}
 }

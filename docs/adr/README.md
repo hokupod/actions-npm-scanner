@@ -16,5 +16,6 @@ An Architecture Decision Record (ADR) captures an important architecture decisio
 
 ## ADRs
 
+- [2026-08-06 Scan pnpm Lockfile v6 to v9 and Isolate Per-File Scan Errors](2026-08-06-scan-pnpm-lockfile-v6-to-v9-and-isolate-file-errors.md)
 - [2026-05-12 Track Mini Shai-Hulud NPM and PyPI Campaign Artifacts](2026-05-12-track-mini-shai-hulud-npm-and-pypi-campaign-artifacts.md)
 - [2026-05-07 Extend Scanner for Mini Shai-Hulud NPM and PyPI Indicators](2026-05-07-extend-scanner-for-mini-shai-hulud-npm-and-pypi-indicators.md)
