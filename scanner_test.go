@@ -142,6 +142,100 @@ func TestScanActionWithPackageLockJSON(t *testing.T) {
 	}
 }
 
+// npm-shrinkwrap.json uses the package-lock.json format and ships inside the
+// published package, so an action can carry one without a package-lock.json.
+func TestScanActionWithNpmShrinkwrapJSON(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	npmShrinkwrapJSON := `{
+	  "lockfileVersion": 3,
+	  "packages": {
+	    "node_modules/keyv": {
+	      "version": "6.0.0",
+	      "resolved": "https://registry.npmjs.org/keyv/-/keyv-6.0.0.tgz"
+	    }
+	  }
+	}`
+
+	if err := os.WriteFile(filepath.Join(tmpDir, "npm-shrinkwrap.json"), []byte(npmShrinkwrapJSON), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	vulnerabilities, err := ScanAction(tmpDir, GetVulnerabilityCatalog())
+	if err != nil {
+		t.Fatalf("ScanAction() error = %v", err)
+	}
+
+	if len(vulnerabilities) != 1 {
+		t.Fatalf("expected 1 vulnerability, got %v", vulnerabilities)
+	}
+	want := "keyv with version 6.0.0 in npm-shrinkwrap.json"
+	if !strings.Contains(vulnerabilities[0], want) {
+		t.Errorf("expected vulnerability containing %q, got %q", want, vulnerabilities[0])
+	}
+}
+
+// When npm-shrinkwrap.json and package-lock.json coexist, npm installs from
+// the shrinkwrap and ignores the package-lock, so the scanner must do the
+// same in both directions: a stale vulnerable package-lock next to a safe
+// shrinkwrap must not fire, and a vulnerable shrinkwrap must fire even when
+// the package-lock next to it is safe.
+func TestScanActionNpmShrinkwrapTakesPrecedenceOverPackageLock(t *testing.T) {
+	lockJSON := func(version string) string {
+		return `{
+	  "lockfileVersion": 3,
+	  "packages": {
+	    "node_modules/keyv": {
+	      "version": "` + version + `",
+	      "resolved": "https://registry.npmjs.org/keyv/-/keyv-` + version + `.tgz"
+	    }
+	  }
+	}`
+	}
+	const safeVersion = "5.5.4"
+	const vulnerableVersion = "6.0.0"
+
+	t.Run("safe shrinkwrap hides stale vulnerable package-lock", func(t *testing.T) {
+		tmpDir := t.TempDir()
+		if err := os.WriteFile(filepath.Join(tmpDir, "npm-shrinkwrap.json"), []byte(lockJSON(safeVersion)), 0644); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(tmpDir, "package-lock.json"), []byte(lockJSON(vulnerableVersion)), 0644); err != nil {
+			t.Fatal(err)
+		}
+
+		vulnerabilities, err := ScanAction(tmpDir, GetVulnerabilityCatalog())
+		if err != nil {
+			t.Fatalf("ScanAction() error = %v", err)
+		}
+		if len(vulnerabilities) != 0 {
+			t.Errorf("expected no vulnerabilities, got %v", vulnerabilities)
+		}
+	})
+
+	t.Run("vulnerable shrinkwrap is detected despite safe package-lock", func(t *testing.T) {
+		tmpDir := t.TempDir()
+		if err := os.WriteFile(filepath.Join(tmpDir, "npm-shrinkwrap.json"), []byte(lockJSON(vulnerableVersion)), 0644); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(tmpDir, "package-lock.json"), []byte(lockJSON(safeVersion)), 0644); err != nil {
+			t.Fatal(err)
+		}
+
+		vulnerabilities, err := ScanAction(tmpDir, GetVulnerabilityCatalog())
+		if err != nil {
+			t.Fatalf("ScanAction() error = %v", err)
+		}
+		if len(vulnerabilities) != 1 {
+			t.Fatalf("expected 1 vulnerability, got %v", vulnerabilities)
+		}
+		want := "keyv with version 6.0.0 in npm-shrinkwrap.json"
+		if !strings.Contains(vulnerabilities[0], want) {
+			t.Errorf("expected vulnerability containing %q, got %q", want, vulnerabilities[0])
+		}
+	})
+}
+
 func TestScanActionWithResolvedVersions(t *testing.T) {
 	tmpDir, err := ioutil.TempDir("", "action-")
 	if err != nil {
@@ -864,6 +958,19 @@ func TestKeyvCacheableCompromiseNpmPackages(t *testing.T) {
 				t.Errorf("expected vulnerability containing %q, got %q", want, vulnerabilities[0])
 			}
 		})
+	}
+}
+
+// The catalog lists confirmed compromises only. No payload-level analysis has
+// confirmed the @keyv/*@6.0.0 tarballs republished on 2026-08-04 as malicious
+// (Socket calls them suspect, Snyk cleared the rest of the scope), so the
+// whole scope stays out of the catalog until such evidence exists.
+func TestKeyvScopeStaysOutOfConfirmedCatalog(t *testing.T) {
+	catalog := GetVulnerabilityCatalog()
+	for _, pkg := range catalog.NpmPackages {
+		if strings.HasPrefix(pkg.Name, "@keyv/") {
+			t.Errorf("expected no @keyv/* entry in the confirmed catalog, found %s %v", pkg.Name, pkg.Versions)
+		}
 	}
 }
 

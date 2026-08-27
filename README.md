@@ -16,6 +16,8 @@ On August 4, 2026, Socket reported an active compromise that began in the `keyv`
 - [Socket technical analysis](https://socket.dev/blog/popular-npm-packages-in-the-keyv-and-cacheable-namespaces-compromised-in-active-supply-chain)
 - [Socket campaign tracker and affected package list](https://socket.dev/supply-chain-attacks/keyv-and-cacheable-compromise)
 
+The `@keyv` scope itself is deliberately not in the catalog. The `@keyv/*@6.0.0` tarballs republished on August 4, 2026 were removed from the registry, but no payload-level analysis has confirmed them as malicious — Socket classifies them as suspect and Snyk's tarball sweep cleared the rest of the scope. The catalog lists confirmed compromises only, so those releases stay out until such evidence exists.
+
 Socket's campaign data also listed 24 Go artifacts across 8 modules. Go module scanning is outside this tool's current scope, so those entries are not included in the catalog.
 
 The attack demonstrated sophisticated techniques including:
@@ -33,6 +35,7 @@ In late 2025, the "Second Coming" NPM contamination campaign was discovered, whi
 - 🔍 **Comprehensive Scanning**: Scans GitHub Actions workflow files (.yml/.yaml)
 - 🚨 **Vulnerability Detection**: Identifies vulnerable NPM and PyPI packages in actions
 - 📦 **Curated Package List**: Contains static NPM/PyPI indicators from Shai-Hulud, Mini Shai-Hulud, and the keyv/cacheable compromise
+- 🧶 **npm Lockfile Coverage**: Scans `package.json`, `package-lock.json`, `npm-shrinkwrap.json`, `yarn.lock`, and `pnpm-lock.yaml`
 - 🐍 **Python Lockfile Coverage**: Scans `requirements*.txt`, `Pipfile.lock`, `poetry.lock`, and `uv.lock`
 - 📂 **Flexible Input**: Supports both single file and directory scanning
 - 💻 **Local Dependency Scanning**: Scans local dependency files or directories with `--local`
@@ -172,7 +175,7 @@ Scanning workflow: .github/workflows/ci.yml
   Downloading action some-user/vulnerable-action@v1...
   🔍 Scanning action some-user/vulnerable-action@v1...
     🔍 Scanning package.json...
-       package-lock.json not found. Skipping.
+       package-lock.json / npm-shrinkwrap.json not found. Skipping.
        yarn.lock not found. Skipping.
        pnpm-lock.yaml not found. Skipping.
     ⚠️ Found vulnerabilities:
@@ -263,6 +266,8 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 - [Socketの技術分析](https://socket.dev/blog/popular-npm-packages-in-the-keyv-and-cacheable-namespaces-compromised-in-active-supply-chain)
 - [Socketのキャンペーントラッカーと影響パッケージ一覧](https://socket.dev/supply-chain-attacks/keyv-and-cacheable-compromise)
 
+`@keyv`スコープ自体は意図的にカタログへ収録していません。2026年8月4日に再公開された`@keyv/*@6.0.0`はレジストリから削除されたものの、悪意あるペイロードを含んでいたことを確認した分析は存在しません。Socketは「疑わしい(suspect)」と分類し、Snykのtarball調査はスコープ内の他パッケージを非侵害と結論づけています。このカタログは侵害が確認されたものだけを収録する方針のため、証拠が出るまでこれらのリリースは対象外とします。
+
 Socketのキャンペーンデータには、Go 8モジュール、24 artifactsも掲載されていました。現在このツールはGoモジュールをスキャンしないため、これらはカタログに含めていません。
 
 この攻撃では以下のような高度な技術が使用されました：
@@ -280,6 +285,7 @@ Socketのキャンペーンデータには、Go 8モジュール、24 artifacts�
 - 🔍 **包括的スキャン**: GitHub Actionsワークフローファイル(.yml/.yaml)をスキャン
 - 🚨 **脆弱性検出**: アクション内の脆弱なNPM/PyPIパッケージを特定
 - 📦 **厳選されたパッケージリスト**: Shai-Hulud、Mini Shai-Hulud、keyv/cacheable侵害のNPM/PyPI静的IoCを収録
+- 🧶 **npmロックファイル対応**: `package.json`、`package-lock.json`、`npm-shrinkwrap.json`、`yarn.lock`、`pnpm-lock.yaml`をスキャン
 - 🐍 **Pythonロックファイル対応**: `requirements*.txt`、`Pipfile.lock`、`poetry.lock`、`uv.lock`をスキャン
 - 📂 **柔軟な入力**: 単一ファイルとディレクトリスキャンの両方をサポート
 - 💻 **ローカル依存ファイルスキャン**: `--local`でローカルの依存ファイルまたはディレクトリをスキャン

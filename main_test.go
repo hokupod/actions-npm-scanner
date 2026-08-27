@@ -30,7 +30,7 @@ func TestMain(t *testing.T) {
 		assertContains(t, output, expected)
 	}
 	assertNotContains(t, output, "🔍 Scanning action")
-	assertNotContains(t, output, "package-lock.json not found. Skipping.")
+	assertNotContains(t, output, "package-lock.json / npm-shrinkwrap.json not found. Skipping.")
 }
 
 func TestMainVerboseIncludesDetailedOutputAndSummary(t *testing.T) {
@@ -41,7 +41,7 @@ func TestMainVerboseIncludesDetailedOutputAndSummary(t *testing.T) {
 	expectedStrings := []string{
 		"🔍 Scanning action some-user/some-action-with-vulnerable-dep@v1...",
 		"🔍 Scanning package.json...",
-		"   package-lock.json not found. Skipping.",
+		"   package-lock.json / npm-shrinkwrap.json not found. Skipping.",
 		"   yarn.lock not found. Skipping.",
 		"   pnpm-lock.yaml not found. Skipping.",
 		"⚠️ Found vulnerabilities:",
